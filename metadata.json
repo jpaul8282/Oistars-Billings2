@@ -1,0 +1,7 @@
+{
+  "name": "Oistars Billings",
+  "description": "Comprehensive billing, invoicing, client store ledger, and recurring subscription platform for e-commerce brands.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
