@@ -55,6 +55,7 @@ import com.example.ui.theme.OceanBlue
 import com.example.ui.theme.StatusOverdue
 import com.example.ui.theme.StatusPaid
 
+@androidx.compose.material3.ExperimentalMaterial3Api
 @Composable
 fun InvoicesScreen(
     invoices: List<InvoiceEntity>,

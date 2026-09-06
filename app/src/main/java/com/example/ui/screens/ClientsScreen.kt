@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,17 +25,24 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Business
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.TableChart
+import androidx.compose.material.icons.filled.ViewAgenda
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -44,6 +53,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,11 +70,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.ClientEntity
 import com.example.data.local.InvoiceEntity
+import com.example.data.model.InvoiceStatus
 import com.example.ui.components.Formatters
 import com.example.ui.components.SearchBar
+import com.example.ui.components.StatusBadge
+import com.example.ui.theme.NavyDark
 import com.example.ui.theme.OceanBlue
+import com.example.ui.theme.StatusDraft
+import com.example.ui.theme.StatusDraftBg
 import com.example.ui.theme.StatusOverdue
+import com.example.ui.theme.StatusOverdueBg
 import com.example.ui.theme.StatusPaid
+import com.example.ui.theme.StatusPaidBg
+import com.example.ui.theme.StatusPending
+import com.example.ui.theme.StatusPendingBg
+
+enum class ClientViewMode {
+    TABLE,
+    CARDS
+}
 
 @Composable
 fun ClientsScreen(
@@ -88,31 +112,192 @@ fun ClientsScreen(
     modifier: Modifier = Modifier
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    var selectedStatusFilter by remember { mutableStateOf("ALL") } // ALL, OVERDUE, PENDING, PAID
+    var viewMode by remember { mutableStateOf(ClientViewMode.TABLE) }
     var showAddDialog by remember { mutableStateOf(false) }
     var editingClient by remember { mutableStateOf<ClientEntity?>(null) }
     var viewingClientDetails by remember { mutableStateOf<ClientEntity?>(null) }
 
+    // Pre-calculate client metrics for filtering and badges
+    val clientMetricsMap = remember(clients, invoices) {
+        clients.associate { client ->
+            val clientInvs = invoices.filter { it.clientId == client.id }
+            val paidCount = clientInvs.count { it.invoiceStatus == InvoiceStatus.PAID }
+            val pendingCount = clientInvs.count { it.invoiceStatus == InvoiceStatus.PENDING }
+            val overdueCount = clientInvs.count { it.invoiceStatus == InvoiceStatus.OVERDUE }
+            val totalBilled = clientInvs.sumOf { it.totalAmount }
+            val totalOutstanding = clientInvs.sumOf { it.balanceDue }
+            client.id to ClientInvoiceStats(
+                invoicesCount = clientInvs.size,
+                paidCount = paidCount,
+                pendingCount = pendingCount,
+                overdueCount = overdueCount,
+                totalBilled = totalBilled,
+                totalOutstanding = totalOutstanding
+            )
+        }
+    }
+
     val filteredClients = clients.filter { client ->
-        if (searchQuery.isBlank()) true else {
+        val stats = clientMetricsMap[client.id] ?: ClientInvoiceStats()
+
+        val matchesStatus = when (selectedStatusFilter) {
+            "OVERDUE" -> stats.overdueCount > 0
+            "PENDING" -> stats.pendingCount > 0
+            "PAID" -> stats.paidCount > 0 && stats.overdueCount == 0 && stats.pendingCount == 0
+            else -> true
+        }
+
+        val matchesSearch = if (searchQuery.isBlank()) true else {
             client.name.contains(searchQuery, ignoreCase = true) ||
             client.contactPerson.contains(searchQuery, ignoreCase = true) ||
             client.email.contains(searchQuery, ignoreCase = true) ||
             client.taxNumber.contains(searchQuery, ignoreCase = true)
         }
+
+        matchesStatus && matchesSearch
+    }
+
+    val overdueClientsCount = clients.count { (clientMetricsMap[it.id]?.overdueCount ?: 0) > 0 }
+    val pendingClientsCount = clients.count { (clientMetricsMap[it.id]?.pendingCount ?: 0) > 0 }
+    val settledClientsCount = clients.count {
+        val s = clientMetricsMap[it.id] ?: ClientInvoiceStats()
+        s.paidCount > 0 && s.overdueCount == 0 && s.pendingCount == 0
     }
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            PaddingValues(horizontal = 16.dp, vertical = 8.dp).let {
+            // Search Input
+            PaddingValues(horizontal = 16.dp, vertical = 6.dp).let {
                 Box(modifier = Modifier.padding(it)) {
                     SearchBar(
                         query = searchQuery,
                         onQueryChange = { searchQuery = it },
-                        placeholder = "Search client stores or VAT numbers..."
+                        placeholder = "Search store name, contact, or VAT ID..."
                     )
                 }
             }
 
+            // Controls Bar: Filter Chips & View Mode Switcher
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Status Filter Chips
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    FilterChip(
+                        selected = selectedStatusFilter == "ALL",
+                        onClick = { selectedStatusFilter = "ALL" },
+                        label = { Text("All (${clients.size})", fontSize = 12.sp) }
+                    )
+
+                    FilterChip(
+                        selected = selectedStatusFilter == "OVERDUE",
+                        onClick = { selectedStatusFilter = "OVERDUE" },
+                        label = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(StatusOverdue))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Overdue ($overdueClientsCount)", fontSize = 12.sp)
+                            }
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = StatusOverdueBg,
+                            selectedLabelColor = StatusOverdue
+                        )
+                    )
+
+                    FilterChip(
+                        selected = selectedStatusFilter == "PENDING",
+                        onClick = { selectedStatusFilter = "PENDING" },
+                        label = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(StatusPending))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Pending ($pendingClientsCount)", fontSize = 12.sp)
+                            }
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = StatusPendingBg,
+                            selectedLabelColor = StatusPending
+                        )
+                    )
+
+                    FilterChip(
+                        selected = selectedStatusFilter == "PAID",
+                        onClick = { selectedStatusFilter = "PAID" },
+                        label = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(StatusPaid))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Settled ($settledClientsCount)", fontSize = 12.sp)
+                            }
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = StatusPaidBg,
+                            selectedLabelColor = StatusPaid
+                        )
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // View Mode Toggle Button: Table vs Cards
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Row(modifier = Modifier.padding(2.dp)) {
+                        IconButton(
+                            onClick = { viewMode = ClientViewMode.TABLE },
+                            modifier = Modifier
+                                .size(32.dp)
+                                .then(
+                                    if (viewMode == ClientViewMode.TABLE)
+                                        Modifier.background(MaterialTheme.colorScheme.surface, RoundedCornerShape(6.dp))
+                                    else Modifier
+                                )
+                                .testTag("client_view_mode_table")
+                        ) {
+                            Icon(
+                                Icons.Default.TableChart,
+                                contentDescription = "Table View",
+                                tint = if (viewMode == ClientViewMode.TABLE) OceanBlue else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { viewMode = ClientViewMode.CARDS },
+                            modifier = Modifier
+                                .size(32.dp)
+                                .then(
+                                    if (viewMode == ClientViewMode.CARDS)
+                                        Modifier.background(MaterialTheme.colorScheme.surface, RoundedCornerShape(6.dp))
+                                    else Modifier
+                                )
+                                .testTag("client_view_mode_cards")
+                        ) {
+                            Icon(
+                                Icons.Default.ViewAgenda,
+                                contentDescription = "Cards View",
+                                tint = if (viewMode == ClientViewMode.CARDS) OceanBlue else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Client Content Area
             if (filteredClients.isEmpty()) {
                 Box(
                     modifier = Modifier
@@ -131,7 +316,9 @@ fun ClientsScreen(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                         )
                         Text(
-                            text = if (searchQuery.isNotBlank()) "No stores found" else "No client stores registered",
+                            text = if (searchQuery.isNotBlank() || selectedStatusFilter != "ALL")
+                                "No client stores match your current filters"
+                            else "No client stores registered",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -141,30 +328,42 @@ fun ClientsScreen(
                     }
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 88.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(filteredClients, key = { it.id }) { client ->
-                        val clientInvoices = invoices.filter { it.clientId == client.id }
-                        val totalBilled = clientInvoices.sumOf { it.totalAmount }
-                        val totalOutstanding = clientInvoices.sumOf { it.balanceDue }
+                if (viewMode == ClientViewMode.TABLE) {
+                    // Full Table Component
+                    ClientTableComponent(
+                        clients = filteredClients,
+                        clientMetricsMap = clientMetricsMap,
+                        onClickClient = { viewingClientDetails = it },
+                        onEditClient = { editingClient = it },
+                        onCreateInvoice = { onCreateInvoiceForClient(it) },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .weight(1f)
+                    )
+                } else {
+                    // Cards View with color badges
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 88.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(filteredClients, key = { it.id }) { client ->
+                            val stats = clientMetricsMap[client.id] ?: ClientInvoiceStats()
 
-                        ClientItemCard(
-                            client = client,
-                            invoicesCount = clientInvoices.size,
-                            totalBilled = totalBilled,
-                            totalOutstanding = totalOutstanding,
-                            onClick = { viewingClientDetails = client },
-                            onEdit = { editingClient = client },
-                            onCreateInvoice = { onCreateInvoiceForClient(client) }
-                        )
+                            ClientItemCard(
+                                client = client,
+                                stats = stats,
+                                onClick = { viewingClientDetails = client },
+                                onEdit = { editingClient = client },
+                                onCreateInvoice = { onCreateInvoiceForClient(client) }
+                            )
+                        }
                     }
                 }
             }
         }
 
+        // Floating Action Button
         FloatingActionButton(
             onClick = { showAddDialog = true },
             containerColor = OceanBlue,
@@ -178,7 +377,7 @@ fun ClientsScreen(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Client")
+                Icon(Icons.Default.Add, contentDescription = "Add Store")
                 Spacer(modifier = Modifier.width(6.dp))
                 Text("Add Store", fontWeight = FontWeight.Bold)
             }
@@ -203,8 +402,10 @@ fun ClientsScreen(
 
     viewingClientDetails?.let { client ->
         val clientInvoices = invoices.filter { it.clientId == client.id }
+        val stats = clientMetricsMap[client.id] ?: ClientInvoiceStats()
         ClientDetailDialog(
             client = client,
+            stats = stats,
             invoices = clientInvoices,
             onDismiss = { viewingClientDetails = null },
             onEdit = {
@@ -223,12 +424,279 @@ fun ClientsScreen(
     }
 }
 
+data class ClientInvoiceStats(
+    val invoicesCount: Int = 0,
+    val paidCount: Int = 0,
+    val pendingCount: Int = 0,
+    val overdueCount: Int = 0,
+    val totalBilled: Double = 0.0,
+    val totalOutstanding: Double = 0.0
+)
+
+/**
+ * Color-coded status badges component for client invoice tracking:
+ * - Paid: Emerald Green badge
+ * - Pending: Amber badge
+ * - Overdue: Crimson Red badge
+ */
+@Composable
+fun ClientInvoiceStatusBadges(
+    paidCount: Int,
+    pendingCount: Int,
+    overdueCount: Int,
+    compact: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Paid Badge (Green)
+        Surface(
+            color = if (paidCount > 0) StatusPaidBg else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            shape = RoundedCornerShape(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = if (compact) 6.dp else 8.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = "Paid",
+                    tint = if (paidCount > 0) StatusPaid else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier.size(11.dp)
+                )
+                Spacer(modifier = Modifier.width(3.dp))
+                Text(
+                    text = if (compact) "$paidCount" else "$paidCount Paid",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (paidCount > 0) StatusPaid else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            }
+        }
+
+        // Pending Badge (Amber)
+        Surface(
+            color = if (pendingCount > 0) StatusPendingBg else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            shape = RoundedCornerShape(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = if (compact) 6.dp else 8.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.HourglassEmpty,
+                    contentDescription = "Pending",
+                    tint = if (pendingCount > 0) StatusPending else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier.size(11.dp)
+                )
+                Spacer(modifier = Modifier.width(3.dp))
+                Text(
+                    text = if (compact) "$pendingCount" else "$pendingCount Pending",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (pendingCount > 0) StatusPending else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            }
+        }
+
+        // Overdue Badge (Crimson Red)
+        Surface(
+            color = if (overdueCount > 0) StatusOverdueBg else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            shape = RoundedCornerShape(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = if (compact) 6.dp else 8.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = "Overdue",
+                    tint = if (overdueCount > 0) StatusOverdue else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier.size(11.dp)
+                )
+                Spacer(modifier = Modifier.width(3.dp))
+                Text(
+                    text = if (compact) "$overdueCount" else "$overdueCount Overdue",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (overdueCount > 0) StatusOverdue else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Consolidated account-level status pill: OVERDUE, PENDING, ALL SETTLED, NEW
+ */
+@Composable
+fun ClientHealthPill(
+    overdueCount: Int,
+    pendingCount: Int,
+    paidCount: Int,
+    modifier: Modifier = Modifier
+) {
+    val (label, bgColor, textColor) = when {
+        overdueCount > 0 -> Triple("OVERDUE ($overdueCount)", StatusOverdueBg, StatusOverdue)
+        pendingCount > 0 -> Triple("PENDING ($pendingCount)", StatusPendingBg, StatusPending)
+        paidCount > 0 -> Triple("ALL SETTLED", StatusPaidBg, StatusPaid)
+        else -> Triple("NEW STORE", StatusDraftBg, StatusDraft)
+    }
+
+    Surface(
+        color = bgColor,
+        shape = RoundedCornerShape(6.dp),
+        modifier = modifier
+    ) {
+        Text(
+            text = label,
+            color = textColor,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Black,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+        )
+    }
+}
+
+/**
+ * High-density Client Table Component with explicit color-coded status badges for Paid, Pending, and Overdue.
+ */
+@Composable
+fun ClientTableComponent(
+    clients: List<ClientEntity>,
+    clientMetricsMap: Map<String, ClientInvoiceStats>,
+    onClickClient: (ClientEntity) -> Unit,
+    onEditClient: (ClientEntity) -> Unit,
+    onCreateInvoice: (ClientEntity) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .testTag("client_table_card"),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Table Header
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "STORE / CLIENT",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1.3f)
+                    )
+                    Text(
+                        text = "STATUS BADGES",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1.5f)
+                    )
+                    Text(
+                        text = "BALANCE DUE",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+
+            // Table Rows
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 88.dp)
+            ) {
+                items(clients, key = { it.id }) { client ->
+                    val stats = clientMetricsMap[client.id] ?: ClientInvoiceStats()
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onClickClient(client) }
+                            .padding(horizontal = 14.dp, vertical = 12.dp)
+                            .testTag("client_table_row_${client.id}"),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Col 1: Store & Country/VAT
+                        Column(modifier = Modifier.weight(1.3f)) {
+                            Text(
+                                text = client.name,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                maxLines = 1
+                            )
+                            Text(
+                                text = if (client.taxNumber.isNotBlank()) client.taxNumber else client.country,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
+                            )
+                        }
+
+                        // Col 2: Color-Coded Status Badges (Paid, Pending, Overdue)
+                        Column(modifier = Modifier.weight(1.5f)) {
+                            ClientInvoiceStatusBadges(
+                                paidCount = stats.paidCount,
+                                pendingCount = stats.pendingCount,
+                                overdueCount = stats.overdueCount,
+                                compact = true
+                            )
+                        }
+
+                        // Col 3: Balance & Quick View
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            horizontalAlignment = Alignment.End
+                        ) {
+                            Text(
+                                text = if (stats.totalOutstanding > 0)
+                                    Formatters.formatCurrency(stats.totalOutstanding, client.currency)
+                                else "Settled",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (stats.overdueCount > 0) StatusOverdue
+                                else if (stats.totalOutstanding > 0) StatusPending
+                                else StatusPaid
+                            )
+                            Text(
+                                text = "Billed: ${Formatters.formatCurrency(stats.totalBilled, client.currency)}",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun ClientItemCard(
     client: ClientEntity,
-    invoicesCount: Int,
-    totalBilled: Double,
-    totalOutstanding: Double,
+    stats: ClientInvoiceStats,
     onClick: () -> Unit,
     onEdit: () -> Unit,
     onCreateInvoice: () -> Unit,
@@ -244,6 +712,7 @@ fun ClientItemCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 1.5.dp)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
+            // Top Row: Store Name, Health Pill & Edit
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -252,7 +721,7 @@ fun ClientItemCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(38.dp)
                             .clip(CircleShape)
                             .background(OceanBlue.copy(alpha = 0.12f)),
                         contentAlignment = Alignment.Center
@@ -261,7 +730,7 @@ fun ClientItemCard(
                             Icons.Default.Business,
                             contentDescription = null,
                             tint = OceanBlue,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
 
@@ -277,27 +746,65 @@ fun ClientItemCard(
                         if (client.contactPerson.isNotBlank()) {
                             Text(
                                 text = "${client.contactPerson} • ${client.country}",
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
                 }
 
-                IconButton(onClick = onEdit) {
-                    Icon(
-                        Icons.Default.Edit,
-                        contentDescription = "Edit Client",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ClientHealthPill(
+                        overdueCount = stats.overdueCount,
+                        pendingCount = stats.pendingCount,
+                        paidCount = stats.paidCount
+                    )
+
+                    IconButton(onClick = onEdit) {
+                        Icon(
+                            Icons.Default.Edit,
+                            contentDescription = "Edit Client",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Prominent Color-Coded Status Badges for Scannability
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Invoices:",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    ClientInvoiceStatusBadges(
+                        paidCount = stats.paidCount,
+                        pendingCount = stats.pendingCount,
+                        overdueCount = stats.overdueCount
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(10.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
-            Spacer(modifier = Modifier.height(10.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+            Spacer(modifier = Modifier.height(8.dp))
 
+            // Bottom Financial Metrics & Action
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -305,20 +812,20 @@ fun ClientItemCard(
             ) {
                 Column {
                     Text(
-                        text = "Total Billed: ${Formatters.formatCurrency(totalBilled, client.currency)}",
+                        text = "Total Billed: ${Formatters.formatCurrency(stats.totalBilled, client.currency)}",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )
-                    if (totalOutstanding > 0) {
+                    if (stats.totalOutstanding > 0) {
                         Text(
-                            text = "Outstanding: ${Formatters.formatCurrency(totalOutstanding, client.currency)}",
+                            text = "Outstanding: ${Formatters.formatCurrency(stats.totalOutstanding, client.currency)}",
                             fontSize = 11.sp,
-                            color = StatusOverdue,
+                            color = if (stats.overdueCount > 0) StatusOverdue else StatusPending,
                             fontWeight = FontWeight.Bold
                         )
                     } else {
                         Text(
-                            text = "$invoicesCount invoices settled",
+                            text = "${stats.invoicesCount} invoices settled in full",
                             fontSize = 11.sp,
                             color = StatusPaid
                         )
@@ -494,6 +1001,7 @@ fun ClientFormDialog(
 @Composable
 fun ClientDetailDialog(
     client: ClientEntity,
+    stats: ClientInvoiceStats,
     invoices: List<InvoiceEntity>,
     onDismiss: () -> Unit,
     onEdit: () -> Unit,
@@ -506,7 +1014,18 @@ fun ClientDetailDialog(
         onDismissRequest = onDismiss,
         title = {
             Column {
-                Text(text = client.name, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = client.name, fontWeight = FontWeight.Bold)
+                    ClientHealthPill(
+                        overdueCount = stats.overdueCount,
+                        pendingCount = stats.pendingCount,
+                        paidCount = stats.paidCount
+                    )
+                }
                 Text(text = "Client ID: ${client.id}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
@@ -517,6 +1036,33 @@ fun ClientDetailDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                // Color-Coded Status Badges Banner in Detail Dialog
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Ledger Status:",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        ClientInvoiceStatusBadges(
+                            paidCount = stats.paidCount,
+                            pendingCount = stats.pendingCount,
+                            overdueCount = stats.overdueCount
+                        )
+                    }
+                }
+
                 if (client.contactPerson.isNotBlank()) {
                     Text("Contact: ${client.contactPerson}", fontSize = 13.sp)
                 }
@@ -541,17 +1087,45 @@ fun ClientDetailDialog(
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                 Text("Invoice History (${invoices.size})", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                invoices.take(5).forEach { inv ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("${inv.id} (${Formatters.formatShortDate(inv.issueDate)})", fontSize = 12.sp)
-                        Text(
-                            "${Formatters.formatCurrency(inv.totalAmount, inv.currency)} [${inv.status}]",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
+
+                if (invoices.isEmpty()) {
+                    Text(
+                        text = "No invoices issued for this client yet.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    invoices.forEach { inv ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = inv.id,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = Formatters.formatShortDate(inv.issueDate),
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = Formatters.formatCurrency(inv.totalAmount, inv.currency),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                StatusBadge(status = inv.invoiceStatus)
+                            }
+                        }
                     }
                 }
             }

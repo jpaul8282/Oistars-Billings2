@@ -388,13 +388,14 @@ fun InvoicePreviewCard(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        val vatPct = if (invoice.subtotal > 0.0) ((invoice.taxTotal / invoice.subtotal) * 100).toInt() else 21
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("VAT / Tax (${invoice.taxRate}%):", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("VAT / Tax ($vatPct%):", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(
-                                Formatters.formatCurrency(invoice.taxAmount, invoice.currency),
+                                Formatters.formatCurrency(invoice.taxTotal, invoice.currency),
                                 fontSize = 10.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

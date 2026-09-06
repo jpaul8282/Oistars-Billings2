@@ -19,3 +19,8 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Data models and Room persistence
+-keep class com.example.data.** { *; }
+-keepclassmembers class com.example.data.** { *; }
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
