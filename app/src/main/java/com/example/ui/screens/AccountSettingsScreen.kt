@@ -34,6 +34,9 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Policy
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.VerifiedUser
+import com.example.ui.components.DataSafetyPolicyDialog
+import com.example.ui.components.SecurityPolicyDialog
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -100,6 +103,7 @@ fun AccountSettingsScreen(
     var biometricLock by remember { mutableStateOf(false) }
 
     var currencyExpanded by remember { mutableStateOf(false) }
+    var showDataSafetyDialog by remember { mutableStateOf(false) }
     var showHealthDisclaimerDialog by remember { mutableStateOf(false) }
     var showSecurityPolicyDialog by remember { mutableStateOf(false) }
     var showSaveToast by remember { mutableStateOf(false) }
@@ -408,9 +412,9 @@ fun AccountSettingsScreen(
                 )
 
                 SettingsNavRow(
-                    icon = Icons.Default.HealthAndSafety,
-                    title = "Health & Wellness Disclaimer",
-                    onClick = { showHealthDisclaimerDialog = true }
+                    icon = Icons.Default.VerifiedUser,
+                    title = "Data Safety Policy (Google Play)",
+                    onClick = { showDataSafetyDialog = true }
                 )
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
@@ -419,6 +423,14 @@ fun AccountSettingsScreen(
                     icon = Icons.Default.Security,
                     title = "Security & Data Privacy Policy",
                     onClick = { showSecurityPolicyDialog = true }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+
+                SettingsNavRow(
+                    icon = Icons.Default.HealthAndSafety,
+                    title = "Health & Wellness Disclaimer",
+                    onClick = { showHealthDisclaimerDialog = true }
                 )
             }
         }
@@ -532,33 +544,15 @@ fun AccountSettingsScreen(
 
     // Security Policy Dialog
     if (showSecurityPolicyDialog) {
-        AlertDialog(
-            onDismissRequest = { showSecurityPolicyDialog = false },
-            title = { Text("Security & Data Policy", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "• Local Sandbox Storage: All customer invoices and transaction records reside exclusively in your device's protected internal SQLite Room database.",
-                        fontSize = 13.sp
-                    )
-                    Text(
-                        text = "• Zero Tracking: No analytics beacons, telemetry, or external advertising SDKs are packaged with the application.",
-                        fontSize = 13.sp
-                    )
-                    Text(
-                        text = "• Play Policy Standards: Adheres strictly to Android photo-picker standards with zero broad filesystem permissions.",
-                        fontSize = 13.sp
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showSecurityPolicyDialog = false }) {
-                    Text("Close")
-                }
-            }
+        SecurityPolicyDialog(
+            onDismissRequest = { showSecurityPolicyDialog = false }
+        )
+    }
+
+    // Google Play & GDPR Data Safety Policy Dialog
+    if (showDataSafetyDialog) {
+        DataSafetyPolicyDialog(
+            onDismissRequest = { showDataSafetyDialog = false }
         )
     }
 }

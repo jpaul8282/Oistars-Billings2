@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Payment
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material3.Card
@@ -48,6 +49,7 @@ import com.example.data.local.ClientEntity
 import com.example.data.local.InvoiceEntity
 import com.example.data.model.InvoiceItem
 import com.example.data.model.InvoiceStatus
+import com.example.ui.components.ExportPdfDialog
 import com.example.ui.components.Formatters
 import com.example.ui.components.SearchBar
 import com.example.ui.components.StatusBadge
@@ -250,6 +252,8 @@ fun InvoiceListItemCard(
     onMarkAsPaid: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showExportPdf by remember { mutableStateOf(false) }
+
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -331,7 +335,24 @@ fun InvoiceListItemCard(
                     }
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    IconButton(
+                        onClick = { showExportPdf = true },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .testTag("invoice_card_pdf_btn_${invoice.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Description,
+                            contentDescription = "Export PDF",
+                            tint = OceanBlue,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+
                     if (invoice.invoiceStatus == InvoiceStatus.PENDING || invoice.invoiceStatus == InvoiceStatus.OVERDUE) {
                         TextButton(
                             onClick = onMarkAsPaid,
@@ -352,5 +373,12 @@ fun InvoiceListItemCard(
                 }
             }
         }
+    }
+
+    if (showExportPdf) {
+        ExportPdfDialog(
+            invoice = invoice,
+            onDismissRequest = { showExportPdf = false }
+        )
     }
 }

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
@@ -33,6 +34,7 @@ import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material.icons.filled.Warning
@@ -149,10 +151,12 @@ fun ClientsScreen(
         }
 
         val matchesSearch = if (searchQuery.isBlank()) true else {
-            client.name.contains(searchQuery, ignoreCase = true) ||
-            client.contactPerson.contains(searchQuery, ignoreCase = true) ||
-            client.email.contains(searchQuery, ignoreCase = true) ||
-            client.taxNumber.contains(searchQuery, ignoreCase = true)
+            val q = searchQuery.trim()
+            client.name.contains(q, ignoreCase = true) ||
+            client.id.contains(q, ignoreCase = true) ||
+            client.taxNumber.contains(q, ignoreCase = true) ||
+            client.contactPerson.contains(q, ignoreCase = true) ||
+            client.email.contains(q, ignoreCase = true)
         }
 
         matchesStatus && matchesSearch
@@ -167,14 +171,16 @@ fun ClientsScreen(
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Search Input
-            PaddingValues(horizontal = 16.dp, vertical = 6.dp).let {
-                Box(modifier = Modifier.padding(it)) {
-                    SearchBar(
-                        query = searchQuery,
-                        onQueryChange = { searchQuery = it },
-                        placeholder = "Search store name, contact, or VAT ID..."
-                    )
+            // Search Input shown when in Cards View mode (In Table mode, it's integrated at the top of the table)
+            if (viewMode == ClientViewMode.CARDS) {
+                PaddingValues(horizontal = 16.dp, vertical = 6.dp).let {
+                    Box(modifier = Modifier.padding(it)) {
+                        SearchBar(
+                            query = searchQuery,
+                            onQueryChange = { searchQuery = it },
+                            placeholder = "Filter by name or company ID (e.g. CLI-, NL)..."
+                        )
+                    }
                 }
             }
 
@@ -298,48 +304,57 @@ fun ClientsScreen(
             }
 
             // Client Content Area
-            if (filteredClients.isEmpty()) {
-                Box(
+            if (viewMode == ClientViewMode.TABLE) {
+                // Full Table Component with integrated Search Bar at the top of the table
+                ClientTableComponent(
+                    clients = filteredClients,
+                    totalClientsCount = clients.size,
+                    clientMetricsMap = clientMetricsMap,
+                    searchQuery = searchQuery,
+                    onSearchQueryChange = { searchQuery = it },
+                    onClickClient = { viewingClientDetails = it },
+                    onEditClient = { editingClient = it },
+                    onCreateInvoice = { onCreateInvoiceForClient(it) },
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        .fillMaxSize()
+                        .weight(1f)
+                )
+            } else {
+                if (filteredClients.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Business,
-                            contentDescription = null,
-                            modifier = Modifier.size(56.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                        )
-                        Text(
-                            text = if (searchQuery.isNotBlank() || selectedStatusFilter != "ALL")
-                                "No client stores match your current filters"
-                            else "No client stores registered",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        TextButton(onClick = { showAddDialog = true }) {
-                            Text("+ Add Client Store")
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Business,
+                                contentDescription = null,
+                                modifier = Modifier.size(56.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                            )
+                            Text(
+                                text = if (searchQuery.isNotBlank() || selectedStatusFilter != "ALL")
+                                    "No client stores match \"$searchQuery\""
+                                else "No client stores registered",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (searchQuery.isNotBlank()) {
+                                TextButton(onClick = { searchQuery = "" }) {
+                                    Text("Clear Search")
+                                }
+                            } else {
+                                TextButton(onClick = { showAddDialog = true }) {
+                                    Text("+ Add Client Store")
+                                }
+                            }
                         }
                     }
-                }
-            } else {
-                if (viewMode == ClientViewMode.TABLE) {
-                    // Full Table Component
-                    ClientTableComponent(
-                        clients = filteredClients,
-                        clientMetricsMap = clientMetricsMap,
-                        onClickClient = { viewingClientDetails = it },
-                        onEditClient = { editingClient = it },
-                        onCreateInvoice = { onCreateInvoiceForClient(it) },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .weight(1f)
-                    )
                 } else {
                     // Cards View with color badges
                     LazyColumn(
@@ -562,12 +577,15 @@ fun ClientHealthPill(
 }
 
 /**
- * High-density Client Table Component with explicit color-coded status badges for Paid, Pending, and Overdue.
+ * High-density Client Table Component with integrated top search bar and explicit color-coded status badges.
  */
 @Composable
 fun ClientTableComponent(
     clients: List<ClientEntity>,
+    totalClientsCount: Int,
     clientMetricsMap: Map<String, ClientInvoiceStats>,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
     onClickClient: (ClientEntity) -> Unit,
     onEditClient: (ClientEntity) -> Unit,
     onCreateInvoice: (ClientEntity) -> Unit,
@@ -582,6 +600,84 @@ fun ClientTableComponent(
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
+            // Search Bar at the top of the client table
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = onSearchQueryChange,
+                        placeholder = {
+                            Text(
+                                text = "Filter by name or company ID (e.g. CLI-, NL)...",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Search",
+                                tint = OceanBlue,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        trailingIcon = {
+                            if (searchQuery.isNotBlank()) {
+                                IconButton(onClick = { onSearchQueryChange("") }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Clear search",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("client_table_search_bar")
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (searchQuery.isBlank())
+                                "Showing all $totalClientsCount client stores"
+                            else
+                                "Found ${clients.size} of $totalClientsCount stores matching \"$searchQuery\"",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        if (searchQuery.isNotBlank()) {
+                            TextButton(
+                                onClick = { onSearchQueryChange("") },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                            ) {
+                                Text("Clear Filter", fontSize = 11.sp, color = OceanBlue)
+                            }
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
             // Table Header
             Surface(
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
@@ -595,18 +691,18 @@ fun ClientTableComponent(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "STORE / CLIENT",
+                        text = "STORE / COMPANY ID",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1.3f)
+                        modifier = Modifier.weight(1.4f)
                     )
                     Text(
                         text = "STATUS BADGES",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1.5f)
+                        modifier = Modifier.weight(1.4f)
                     )
                     Text(
                         text = "BALANCE DUE",
@@ -620,73 +716,121 @@ fun ClientTableComponent(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
 
-            // Table Rows
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 88.dp)
-            ) {
-                items(clients, key = { it.id }) { client ->
-                    val stats = clientMetricsMap[client.id] ?: ClientInvoiceStats()
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onClickClient(client) }
-                            .padding(horizontal = 14.dp, vertical = 12.dp)
-                            .testTag("client_table_row_${client.id}"),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+            // Table Body or Empty State
+            if (clients.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        // Col 1: Store & Country/VAT
-                        Column(modifier = Modifier.weight(1.3f)) {
-                            Text(
-                                text = client.name,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                maxLines = 1
-                            )
-                            Text(
-                                text = if (client.taxNumber.isNotBlank()) client.taxNumber else client.country,
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1
-                            )
-                        }
-
-                        // Col 2: Color-Coded Status Badges (Paid, Pending, Overdue)
-                        Column(modifier = Modifier.weight(1.5f)) {
-                            ClientInvoiceStatusBadges(
-                                paidCount = stats.paidCount,
-                                pendingCount = stats.pendingCount,
-                                overdueCount = stats.overdueCount,
-                                compact = true
-                            )
-                        }
-
-                        // Col 3: Balance & Quick View
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            horizontalAlignment = Alignment.End
-                        ) {
-                            Text(
-                                text = if (stats.totalOutstanding > 0)
-                                    Formatters.formatCurrency(stats.totalOutstanding, client.currency)
-                                else "Settled",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (stats.overdueCount > 0) StatusOverdue
-                                else if (stats.totalOutstanding > 0) StatusPending
-                                else StatusPaid
-                            )
-                            Text(
-                                text = "Billed: ${Formatters.formatCurrency(stats.totalBilled, client.currency)}",
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        Text(
+                            text = "No clients match \"$searchQuery\"",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Search checks client names and company IDs (e.g. CLI-1001)",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        OutlinedButton(onClick = { onSearchQueryChange("") }) {
+                            Text("Reset Search")
                         }
                     }
+                }
+            } else {
+                // Table Rows
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 88.dp)
+                ) {
+                    items(clients, key = { it.id }) { client ->
+                        val stats = clientMetricsMap[client.id] ?: ClientInvoiceStats()
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onClickClient(client) }
+                                .padding(horizontal = 14.dp, vertical = 12.dp)
+                                .testTag("client_table_row_${client.id}"),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Col 1: Store & Company ID / VAT
+                            Column(modifier = Modifier.weight(1.4f)) {
+                                Text(
+                                    text = client.name,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    maxLines = 1
+                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Surface(
+                                        color = OceanBlue.copy(alpha = 0.12f),
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            text = client.id,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = OceanBlue,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                    Text(
+                                        text = if (client.taxNumber.isNotBlank()) client.taxNumber else client.country,
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+
+                            // Col 2: Color-Coded Status Badges (Paid, Pending, Overdue)
+                            Column(modifier = Modifier.weight(1.4f)) {
+                                ClientInvoiceStatusBadges(
+                                    paidCount = stats.paidCount,
+                                    pendingCount = stats.pendingCount,
+                                    overdueCount = stats.overdueCount,
+                                    compact = true
+                                )
+                            }
+
+                            // Col 3: Balance & Quick View
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                horizontalAlignment = Alignment.End
+                            ) {
+                                Text(
+                                    text = if (stats.totalOutstanding > 0)
+                                        Formatters.formatCurrency(stats.totalOutstanding, client.currency)
+                                    else "Settled",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (stats.overdueCount > 0) StatusOverdue
+                                    else if (stats.totalOutstanding > 0) StatusPending
+                                    else StatusPaid
+                                )
+                                Text(
+                                    text = "Billed: ${Formatters.formatCurrency(stats.totalBilled, client.currency)}",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                    }
                 }
             }
         }
@@ -737,12 +881,27 @@ fun ClientItemCard(
                     Spacer(modifier = Modifier.width(10.dp))
 
                     Column {
-                        Text(
-                            text = client.name,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = client.name,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                color = OceanBlue.copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = client.id,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = OceanBlue,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
                         if (client.contactPerson.isNotBlank()) {
                             Text(
                                 text = "${client.contactPerson} • ${client.country}",

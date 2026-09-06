@@ -86,6 +86,24 @@ object Formatters {
         return shortDateFormat.format(Date(timestamp))
     }
 
+    fun formatRelativeTime(timestamp: Long): String {
+        val now = System.currentTimeMillis()
+        val diff = now - timestamp
+        val minuteMs = 60 * 1000L
+        val hourMs = 60 * minuteMs
+        val dayMs = 24 * hourMs
+
+        return when {
+            diff < 0 -> formatShortDate(timestamp)
+            diff < minuteMs -> "Just now"
+            diff < hourMs -> "${(diff / minuteMs).coerceAtLeast(1)}m ago"
+            diff < dayMs -> "${diff / hourMs}h ago"
+            diff < 2 * dayMs -> "Yesterday"
+            diff < 7 * dayMs -> "${diff / dayMs}d ago"
+            else -> formatShortDate(timestamp)
+        }
+    }
+
     fun formatCurrency(amount: Double, currency: String = "EUR"): String {
         val symbol = when (currency.uppercase()) {
             "USD" -> "$"

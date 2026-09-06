@@ -81,10 +81,12 @@ fun InvoicePreviewCard(
     onClick: (() -> Unit)? = null,
     onMarkAsPaid: (() -> Unit)? = null,
     onRecordPayment: (() -> Unit)? = null,
+    onExportPdf: ((InvoiceEntity) -> Unit)? = null,
     showExpandableDetails: Boolean = true,
     initialExpanded: Boolean = false
 ) {
     var isExpanded by remember { mutableStateOf(initialExpanded) }
+    var showExportPdfDialog by remember { mutableStateOf(false) }
     val rotationAngle by animateFloatAsState(
         targetValue = if (isExpanded) 180f else 0f,
         label = "expand_rotation"
@@ -306,29 +308,51 @@ fun InvoicePreviewCard(
                     }
                 }
 
-                // Expand / Action Trigger
-                if (showExpandableDetails) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                // Quick PDF Export & Details Toggle
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    IconButton(
+                        onClick = {
+                            if (onExportPdf != null) onExportPdf(invoice)
+                            else showExportPdfDialog = true
+                        },
                         modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable { isExpanded = !isExpanded }
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                            .size(28.dp)
+                            .testTag("preview_quick_pdf_btn_${invoice.id}")
                     ) {
-                        Text(
-                            text = if (isExpanded) "Less" else "Details",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold
-                        )
                         Icon(
-                            imageVector = Icons.Default.ExpandMore,
-                            contentDescription = "Expand details",
-                            modifier = Modifier
-                                .size(16.dp)
-                                .rotate(rotationAngle),
-                            tint = MaterialTheme.colorScheme.primary
+                            imageVector = Icons.Default.Description,
+                            contentDescription = "Export PDF",
+                            modifier = Modifier.size(15.dp),
+                            tint = OceanBlue
                         )
+                    }
+
+                    if (showExpandableDetails) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable { isExpanded = !isExpanded }
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = if (isExpanded) "Less" else "Details",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Icon(
+                                imageVector = Icons.Default.ExpandMore,
+                                contentDescription = "Expand details",
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .rotate(rotationAngle),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
             }
@@ -418,6 +442,27 @@ fun InvoicePreviewCard(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            OutlinedButton(
+                                onClick = {
+                                    if (onExportPdf != null) onExportPdf(invoice)
+                                    else showExportPdfDialog = true
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("preview_export_pdf_btn_${invoice.id}"),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Description,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = OceanBlue
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Export PDF", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = OceanBlue)
+                            }
+
                             if (invoice.invoiceStatus != InvoiceStatus.PAID && onMarkAsPaid != null) {
                                 Button(
                                     onClick = onMarkAsPaid,
@@ -452,16 +497,16 @@ fun InvoicePreviewCard(
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Add Payment", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("Payment", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                 }
                             }
 
                             if (onClick != null) {
                                 TextButton(
                                     onClick = onClick,
-                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 4.dp)
                                 ) {
-                                    Text("Open Full View →", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text("Full View →", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -469,6 +514,13 @@ fun InvoicePreviewCard(
                 }
             }
         }
+    }
+
+    if (showExportPdfDialog) {
+        ExportPdfDialog(
+            invoice = invoice,
+            onDismissRequest = { showExportPdfDialog = false }
+        )
     }
 }
 

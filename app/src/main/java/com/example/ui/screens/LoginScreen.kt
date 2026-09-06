@@ -60,6 +60,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.components.DataSafetyPolicyDialog
+import com.example.ui.components.SecurityPolicyDialog
 import com.example.ui.theme.AccentGold
 import com.example.ui.theme.NavyDark
 import com.example.ui.theme.OceanBlue
@@ -76,6 +78,8 @@ fun LoginScreen(
     var rememberMe by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
+    var showDataSafetyDialog by remember { mutableStateOf(false) }
+    var showSecurityPolicyDialog by remember { mutableStateOf(false) }
 
     fun handleLogin(submittedEmail: String, submittedPass: String) {
         if (submittedEmail.isBlank() || !submittedEmail.contains("@")) {
@@ -363,26 +367,78 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Security Badge
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
+            // Security Badge & Data Safety Policy link
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Security,
-                    contentDescription = null,
-                    tint = StatusPaid,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Encrypted Local SQLite Database • Zero-Cloud Exposure",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Security,
+                        contentDescription = null,
+                        tint = StatusPaid,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Encrypted Local SQLite Database • Zero-Cloud Exposure",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp
+                    )
+                }
+
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = { showSecurityPolicyDialog = true },
+                        modifier = Modifier.testTag("login_security_policy_btn")
+                    ) {
+                        Text(
+                            text = "Security Policy",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = OceanBlue
+                        )
+                    }
+
+                    Text(
+                        text = "•",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    TextButton(
+                        onClick = { showDataSafetyDialog = true },
+                        modifier = Modifier.testTag("login_data_safety_btn")
+                    ) {
+                        Text(
+                            text = "Data Safety Policy",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = OceanBlue
+                        )
+                    }
+                }
             }
         }
+    }
+
+    if (showSecurityPolicyDialog) {
+        SecurityPolicyDialog(
+            onDismissRequest = { showSecurityPolicyDialog = false }
+        )
+    }
+
+    if (showDataSafetyDialog) {
+        DataSafetyPolicyDialog(
+            onDismissRequest = { showDataSafetyDialog = false }
+        )
     }
 }
 

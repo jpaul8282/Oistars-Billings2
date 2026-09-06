@@ -104,3 +104,25 @@ object InvoiceItemSerializer {
         return list
     }
 }
+
+enum class ClientActivityType(val label: String) {
+    INVOICE_SENT("Invoice Sent"),
+    PAYMENT_RECEIVED("Payment Received"),
+    PAYMENT_OVERDUE("Payment Overdue"),
+    INVOICE_DRAFT("Draft Created")
+}
+
+data class ClientActivityItem(
+    val id: String,
+    val clientId: String,
+    val clientName: String,
+    val invoiceId: String,
+    val type: ClientActivityType,
+    val title: String,
+    val description: String,
+    val timestamp: Long,
+    val amount: Double,
+    val currency: String = "EUR",
+    val paymentMethod: String? = null
+)
+

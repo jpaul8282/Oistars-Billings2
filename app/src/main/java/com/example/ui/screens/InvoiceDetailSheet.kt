@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Payment
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Share
@@ -58,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.InvoiceEntity
 import com.example.data.model.InvoiceStatus
+import com.example.ui.components.ExportPdfDialog
 import com.example.ui.components.Formatters
 import com.example.ui.components.RecordPaymentDialog
 import com.example.ui.components.StatusBadge
@@ -78,6 +80,7 @@ fun InvoiceDetailSheet(
     val context = LocalContext.current
     var showPaymentDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showExportPdfDialog by remember { mutableStateOf(false) }
 
     val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -122,7 +125,17 @@ fun InvoiceDetailSheet(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     StatusBadge(status = invoice.invoiceStatus)
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    IconButton(
+                        onClick = { showExportPdfDialog = true },
+                        modifier = Modifier.testTag("detail_header_export_pdf_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Description,
+                            contentDescription = "Export PDF",
+                            tint = OceanBlue
+                        )
+                    }
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, contentDescription = "Close")
                     }
@@ -424,8 +437,38 @@ fun InvoiceDetailSheet(
                         Text("Delete")
                     }
                 }
+
+                // Primary Export PDF action
+                Button(
+                    onClick = { showExportPdfDialog = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = OceanBlue),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("detail_export_pdf_btn"),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Description,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = Color.White
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Export Invoice as PDF",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
             }
         }
+    }
+
+    if (showExportPdfDialog) {
+        ExportPdfDialog(
+            invoice = invoice,
+            onDismissRequest = { showExportPdfDialog = false }
+        )
     }
 
     if (showPaymentDialog) {

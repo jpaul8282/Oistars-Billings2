@@ -9,6 +9,8 @@ import com.example.data.local.InvoiceEntity
 import com.example.data.local.PaymentEntity
 import com.example.data.local.SubscriptionEntity
 import com.example.data.model.BillingInterval
+import com.example.data.model.ClientActivityItem
+import com.example.data.model.ClientActivityType
 import com.example.data.model.InvoiceItem
 import com.example.data.model.InvoiceItemSerializer
 import com.example.data.model.InvoiceStatus
@@ -135,6 +137,119 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
             collectionRatePercent = rate
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FinancialMetrics())
+
+    val clientActivityFeed: StateFlow<List<ClientActivityItem>> = combine(
+        allInvoices,
+        allPayments,
+        allClients
+    ) { invoices, payments, clients ->
+        val clientNameMap = clients.associate { it.id to it.name }
+        val invoiceMap = invoices.associateBy { it.id }
+        val activities = mutableListOf<ClientActivityItem>()
+
+        // Add payment events
+        payments.forEach { payment ->
+            val invoice = invoiceMap[payment.invoiceId]
+            val clientName = invoice?.clientName 
+                ?: (invoice?.clientId?.let { clientNameMap[it] })
+                ?: "Client"
+            val clientId = invoice?.clientId ?: ""
+
+            activities.add(
+                ClientActivityItem(
+                    id = "act-pay-${payment.id}",
+                    clientId = clientId,
+                    clientName = clientName,
+                    invoiceId = payment.invoiceId,
+                    type = ClientActivityType.PAYMENT_RECEIVED,
+                    title = "Payment Received",
+                    description = "Received via ${payment.method} for ${payment.invoiceId}",
+                    timestamp = payment.timestamp,
+                    amount = payment.amount,
+                    paymentMethod = payment.method
+                )
+            )
+        }
+
+        // Add invoice events (sent, overdue, draft)
+        invoices.forEach { invoice ->
+            val clientName = invoice.clientName.ifBlank { clientNameMap[invoice.clientId] ?: "Client" }
+            
+            when (invoice.status) {
+                InvoiceStatus.SENT, InvoiceStatus.PENDING -> {
+                    activities.add(
+                        ClientActivityItem(
+                            id = "act-sent-${invoice.id}",
+                            clientId = invoice.clientId,
+                            clientName = clientName,
+                            invoiceId = invoice.id,
+                            type = ClientActivityType.INVOICE_SENT,
+                            title = "Invoice Sent",
+                            description = "Issued invoice #${invoice.invoiceNumber} to $clientName",
+                            timestamp = invoice.issueDate,
+                            amount = invoice.totalAmount,
+                            currency = invoice.currency
+                        )
+                    )
+                }
+                InvoiceStatus.OVERDUE -> {
+                    activities.add(
+                        ClientActivityItem(
+                            id = "act-overdue-${invoice.id}",
+                            clientId = invoice.clientId,
+                            clientName = clientName,
+                            invoiceId = invoice.id,
+                            type = ClientActivityType.PAYMENT_OVERDUE,
+                            title = "Payment Overdue",
+                            description = "Invoice #${invoice.invoiceNumber} is past due",
+                            timestamp = invoice.dueDate,
+                            amount = invoice.totalAmount,
+                            currency = invoice.currency
+                        )
+                    )
+                }
+                InvoiceStatus.DRAFT -> {
+                    activities.add(
+                        ClientActivityItem(
+                            id = "act-draft-${invoice.id}",
+                            clientId = invoice.clientId,
+                            clientName = clientName,
+                            invoiceId = invoice.id,
+                            type = ClientActivityType.INVOICE_DRAFT,
+                            title = "Draft Created",
+                            description = "Draft invoice #${invoice.invoiceNumber} prepared",
+                            timestamp = invoice.issueDate,
+                            amount = invoice.totalAmount,
+                            currency = invoice.currency
+                        )
+                    )
+                }
+                InvoiceStatus.PAID -> {
+                    // Also include invoice creation timestamp if no direct payment timestamp exists
+                    if (payments.none { it.invoiceId == invoice.id }) {
+                        activities.add(
+                            ClientActivityItem(
+                                id = "act-paid-${invoice.id}",
+                                clientId = invoice.clientId,
+                                clientName = clientName,
+                                invoiceId = invoice.id,
+                                type = ClientActivityType.PAYMENT_RECEIVED,
+                                title = "Payment Received",
+                                description = "Payment settled for #${invoice.invoiceNumber}",
+                                timestamp = invoice.dueDate,
+                                amount = invoice.totalAmount,
+                                currency = invoice.currency
+                            )
+                        )
+                    }
+                }
+                else -> {}
+            }
+        }
+
+        // Sort latest actions first
+        activities.sortedByDescending { it.timestamp }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun setInvoiceStatusFilter(filter: String) {
         _invoiceStatusFilter.value = filter
