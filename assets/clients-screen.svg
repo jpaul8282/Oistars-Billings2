@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1440" height="2560" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1440" height="2560" fill="#0B192C"/>
+  
+  <!-- Gradient overlay -->
+  <defs>
+    <linearGradient id="grad3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1E3E62;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0066CC;stop-opacity:0.8" />
+    </linearGradient>
+  </defs>
+  <rect width="1440" height="2560" fill="url(#grad3)"/>
+  
+  <!-- Card container -->
+  <rect x="60" y="300" width="1320" height="1960" rx="30" fill="#ffffff" opacity="0.95"/>
+  
+  <!-- Header -->
+  <rect x="60" y="300" width="1320" height="400" rx="30" fill="#0066CC"/>
+  
+  <!-- Icon -->
+  <circle cx="720" cy="400" r="80" fill="#E0A96D"/>
+  <text x="720" y="420" font-size="100" font-weight="bold" text-anchor="middle" fill="#0B192C">👥</text>
+  
+  <!-- Title -->
+  <text x="720" y="600" font-size="72" font-weight="bold" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif">Oistars Billings</text>
+  
+  <!-- Subtitle -->
+  <text x="720" y="900" font-size="48" text-anchor="middle" fill="#1E3E62" font-family="Arial, sans-serif">Client Directory</text>
+  <text x="720" y="1000" font-size="36" text-anchor="middle" fill="#666" font-family="Arial, sans-serif">Organize Your Clients</text>
+  
+  <!-- Features list -->
+  <text x="150" y="1150" font-size="40" font-weight="bold" fill="#0B192C" font-family="Arial, sans-serif">✓ Complete Profiles</text>
+  <text x="150" y="1250" font-size="40" font-weight="bold" fill="#0B192C" font-family="Arial, sans-serif">✓ Payment History</text>
+  <text x="150" y="1350" font-size="40" font-weight="bold" fill="#0B192C" font-family="Arial, sans-serif">✓ Outstanding Balance</text>
+  <text x="150" y="1450" font-size="40" font-weight="bold" fill="#0B192C" font-family="Arial, sans-serif">✓ Contact Details</text>
+  
+  <!-- Footer -->
+  <text x="720" y="2400" font-size="32" text-anchor="middle" fill="#666" font-family="Arial, sans-serif">Professional Invoicing Platform</text>
+  <text x="720" y="2480" font-size="28" text-anchor="middle" fill="#999" font-family="Arial, sans-serif">Offline-First • Secure • Local Storage</text>
+</svg>

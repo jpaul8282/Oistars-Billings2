@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="512" height="512" fill="#0B192C" rx="120"/>
+  
+  <!-- Main circle -->
+  <circle cx="256" cy="256" r="200" fill="#0066CC"/>
+  
+  <!-- Accent circle -->
+  <circle cx="256" cy="256" r="180" fill="#1E3E62"/>
+  
+  <!-- Gold accent -->
+  <circle cx="256" cy="180" r="60" fill="#E0A96D"/>
+  
+  <!-- Icon -->
+  <text x="256" y="200" font-size="100" text-anchor="middle" fill="#0B192C">💰</text>
+  
+  <!-- Bottom text -->
+  <text x="256" y="350" font-size="48" font-weight="bold" text-anchor="middle" fill="#E0A96D" font-family="Arial, sans-serif">Oistars</text>
+  <text x="256" y="410" font-size="36" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif">Billings</text>
+</svg>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="500" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1024" height="500" fill="#0B192C"/>
+  
+  <!-- Gradient -->
+  <defs>
+    <linearGradient id="grad-banner" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0066CC;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1E3E62;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="500" fill="url(#grad-banner)"/>
+  
+  <!-- Icon -->
+  <circle cx="150" cy="250" r="80" fill="#E0A96D" opacity="0.9"/>
+  <text x="150" y="270" font-size="80" font-weight="bold" text-anchor="middle" fill="#0B192C">💼</text>
+  
+  <!-- Main Title -->
+  <text x="350" y="120" font-size="72" font-weight="bold" fill="#ffffff" font-family="Arial, sans-serif">Oistars</text>
+  <text x="350" y="200" font-size="72" font-weight="bold" fill="#E0A96D" font-family="Arial, sans-serif">Billings</text>
+  
+  <!-- Tagline -->
+  <text x="350" y="280" font-size="36" fill="#ffffff" font-family="Arial, sans-serif">Professional Invoicing</text>
+  <text x="350" y="330" font-size="36" fill="#ffffff" font-family="Arial, sans-serif">Platform</text>
+  
+  <!-- Footer text -->
+  <text x="512" y="450" font-size="20" text-anchor="middle" fill="#E0A96D" font-family="Arial, sans-serif">Offline-First • Secure • Local Storage</text>
+</svg>
