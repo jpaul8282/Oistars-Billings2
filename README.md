@@ -443,8 +443,8 @@ Built with:
 
 For questions, bug reports, or feature requests:
 - Open an issue on GitHub
-- Email: support@oistars.example.com
-- Report security vulnerabilities responsibly: security@oistars.example.com
+- Email: oistarsentertainment@gmail.com
+- Report security vulnerabilities responsibly: oistarsentertainment@gmail.com
 
 ---
 
