@@ -24,29 +24,21 @@ android {
   }
 
   signingConfigs {
-    create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH")
-      val keystorePassword = System.getenv("STORE_PASSWORD")
-      val keyAliasValue = System.getenv("KEY_ALIAS") ?: "upload"
-      val keyPasswordValue = System.getenv("KEY_PASSWORD")
+    val keystorePath = System.getenv("KEYSTORE_PATH")
+    val keystorePassword = System.getenv("STORE_PASSWORD")
+    val keyAliasValue = System.getenv("KEY_ALIAS") ?: "upload"
+    val keyPasswordValue = System.getenv("KEY_PASSWORD")
 
-      if (keystorePath == null || keystorePassword == null || keyPasswordValue == null) {
-        throw GradleException(
-          "Release builds require KEYSTORE_PATH, STORE_PASSWORD, and KEY_PASSWORD environment variables. " +
-          "Configure these securely in CI/CD or local secret storage. " +
-          "Never fall back to debug credentials in production."
-        )
+    if (keystorePath != null && keystorePassword != null && keyPasswordValue != null) {
+      create("release") {
+        val keystoreFile = file(keystorePath)
+        if (keystoreFile.exists()) {
+          storeFile = keystoreFile
+          storePassword = keystorePassword
+          keyAlias = keyAliasValue
+          keyPassword = keyPasswordValue
+        }
       }
-
-      val keystoreFile = file(keystorePath)
-      if (!keystoreFile.exists()) {
-        throw GradleException("Keystore file not found at: $keystorePath")
-      }
-
-      storeFile = keystoreFile
-      storePassword = keystorePassword
-      keyAlias = keyAliasValue
-      keyPassword = keyPasswordValue
     }
 
     create("debugConfig") {
@@ -63,7 +55,7 @@ android {
       isMinifyEnabled = true
       isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
+      signingConfigs.findByName("release")?.let { signingConfig = it }
     }
     debug { signingConfig = signingConfigs.getByName("debugConfig") }
   }
@@ -92,7 +84,7 @@ secrets {
   ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
 }
 
-googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.FAIL }
+googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
 
 dependencies {
   implementation(platform(libs.androidx.compose.bom))

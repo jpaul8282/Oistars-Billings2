@@ -163,10 +163,10 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
                     invoiceId = payment.invoiceId,
                     type = ClientActivityType.PAYMENT_RECEIVED,
                     title = "Payment Received",
-                    description = "Received via ${payment.method} for ${payment.invoiceId}",
-                    timestamp = payment.timestamp,
+                    description = "Received via ${payment.paymentMethod} for ${payment.invoiceId}",
+                    timestamp = payment.paymentDate,
                     amount = payment.amount,
-                    paymentMethod = payment.method
+                    paymentMethod = payment.paymentMethod
                 )
             )
         }
@@ -175,8 +175,8 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
         invoices.forEach { invoice ->
             val clientName = invoice.clientName.ifBlank { clientNameMap[invoice.clientId] ?: "Client" }
             
-            when (invoice.status) {
-                InvoiceStatus.SENT, InvoiceStatus.PENDING -> {
+            when (invoice.invoiceStatus) {
+                InvoiceStatus.PENDING -> {
                     activities.add(
                         ClientActivityItem(
                             id = "act-sent-${invoice.id}",
@@ -185,7 +185,7 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
                             invoiceId = invoice.id,
                             type = ClientActivityType.INVOICE_SENT,
                             title = "Invoice Sent",
-                            description = "Issued invoice #${invoice.invoiceNumber} to $clientName",
+                            description = "Issued invoice #${invoice.id} to $clientName",
                             timestamp = invoice.issueDate,
                             amount = invoice.totalAmount,
                             currency = invoice.currency
@@ -201,7 +201,7 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
                             invoiceId = invoice.id,
                             type = ClientActivityType.PAYMENT_OVERDUE,
                             title = "Payment Overdue",
-                            description = "Invoice #${invoice.invoiceNumber} is past due",
+                            description = "Invoice #${invoice.id} is past due",
                             timestamp = invoice.dueDate,
                             amount = invoice.totalAmount,
                             currency = invoice.currency
@@ -217,7 +217,7 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
                             invoiceId = invoice.id,
                             type = ClientActivityType.INVOICE_DRAFT,
                             title = "Draft Created",
-                            description = "Draft invoice #${invoice.invoiceNumber} prepared",
+                            description = "Draft invoice #${invoice.id} prepared",
                             timestamp = invoice.issueDate,
                             amount = invoice.totalAmount,
                             currency = invoice.currency
@@ -235,7 +235,7 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
                                 invoiceId = invoice.id,
                                 type = ClientActivityType.PAYMENT_RECEIVED,
                                 title = "Payment Received",
-                                description = "Payment settled for #${invoice.invoiceNumber}",
+                                description = "Payment settled for #${invoice.id}",
                                 timestamp = invoice.dueDate,
                                 amount = invoice.totalAmount,
                                 currency = invoice.currency
@@ -243,7 +243,6 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
                         )
                     }
                 }
-                else -> {}
             }
         }
 
