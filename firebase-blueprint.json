@@ -1,0 +1,124 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account profile and settings",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Client": {
+      "title": "Client Store",
+      "description": "Client profile, address, contact and payment terms",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "contactPerson": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "taxNumber": { "type": "string" },
+        "address": { "type": "string" },
+        "country": { "type": "string" },
+        "currency": { "type": "string" },
+        "paymentTermsDays": { "type": "integer" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "userId", "name"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Customer invoice with line items, tax, and status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientEmail": { "type": "string" },
+        "status": { "type": "string" },
+        "issueDate": { "type": "integer" },
+        "dueDate": { "type": "integer" },
+        "currency": { "type": "string" },
+        "itemsJson": { "type": "string" },
+        "subtotal": { "type": "number" },
+        "taxTotal": { "type": "number" },
+        "discountTotal": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "amountPaid": { "type": "number" },
+        "paymentTerms": { "type": "string" },
+        "notes": { "type": "string" },
+        "paidAt": { "type": "integer" },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "userId", "clientId", "clientName", "totalAmount"]
+    },
+    "Subscription": {
+      "title": "Subscription",
+      "description": "Recurring billing retainer agreement",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "planName": { "type": "string" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "interval": { "type": "string" },
+        "status": { "type": "string" },
+        "nextBillingDate": { "type": "integer" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "userId", "clientId", "planName", "amount"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Invoice payment record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "invoiceId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "transactionRef": { "type": "string" },
+        "paymentDate": { "type": "integer" },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "userId", "invoiceId", "amount"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile"
+    },
+    "/users/{userId}/clients/{clientId}": {
+      "schema": "Client",
+      "description": "Clients belonging to user"
+    },
+    "/users/{userId}/invoices/{invoiceId}": {
+      "schema": "Invoice",
+      "description": "Invoices belonging to user"
+    },
+    "/users/{userId}/subscriptions/{subscriptionId}": {
+      "schema": "Subscription",
+      "description": "Subscriptions belonging to user"
+    },
+    "/users/{userId}/payments/{paymentId}": {
+      "schema": "Payment",
+      "description": "Payments belonging to user"
+    }
+  }
+}

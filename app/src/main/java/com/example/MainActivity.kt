@@ -50,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -57,6 +58,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.runtime.rememberCoroutineScope
+import com.example.data.firebase.FirebaseAuthManager
+import com.example.data.firebase.FirestoreSyncManager
+import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.launch
 import com.example.data.local.ClientEntity
 import com.example.ui.screens.AccountSettingsScreen
 import com.example.ui.screens.ClientsScreen
@@ -104,9 +110,24 @@ fun MainBillingApp(
     onToggleDarkTheme: (Boolean) -> Unit,
     viewModel: BillingViewModel = viewModel()
 ) {
-    var isLoggedIn by remember { mutableStateOf(true) }
-    var userEmail by remember { mutableStateOf("westerveldjp@gmail.com") }
-    var userName by remember { mutableStateOf("Jan-Peter Westerveld") }
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val firestoreSyncManager = remember { FirestoreSyncManager(context) }
+    var syncStatusMessage by remember { mutableStateOf<String?>(null) }
+
+    val firebaseAuth = remember { FirebaseAuth.getInstance() }
+    val currentFirebaseUser = firebaseAuth.currentUser
+
+    var isLoggedIn by remember { mutableStateOf(currentFirebaseUser != null || true) }
+    var userEmail by remember { mutableStateOf(currentFirebaseUser?.email ?: "westerveldjp@gmail.com") }
+    var userName by remember { mutableStateOf(currentFirebaseUser?.displayName ?: "Jurgen Paul Westerveld") }
+
+    LaunchedEffect(currentFirebaseUser) {
+        currentFirebaseUser?.let { u ->
+            userEmail = u.email ?: userEmail
+            userName = u.displayName ?: userName
+        }
+    }
 
     var currentDestination by remember { mutableStateOf(NavigationDestination.DASHBOARD) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -354,7 +375,26 @@ fun MainBillingApp(
                         userName = userName,
                         isDarkTheme = isDarkTheme,
                         onToggleDarkTheme = onToggleDarkTheme,
-                        onLogout = { isLoggedIn = false }
+                        onLogout = {
+                            firebaseAuth.signOut()
+                            isLoggedIn = false
+                        },
+                        onSyncToCloud = {
+                            coroutineScope.launch {
+                                val uid = firebaseAuth.currentUser?.uid ?: "local-owner"
+                                syncStatusMessage = "Syncing local records with Firestore..."
+                                val payments = viewModel.allPayments.value
+                                val result = firestoreSyncManager.syncAllToCloud(uid, clients, invoices, subscriptions, payments)
+                                result.onSuccess {
+                                    syncStatusMessage = "Synced ${clients.size} stores, ${invoices.size} invoices & ${subscriptions.size} retainers to Firestore!"
+                                    snackbarHostState.showSnackbar("Synced to Firestore successfully!")
+                                }.onFailure { e ->
+                                    syncStatusMessage = "Sync error: ${e.localizedMessage ?: "Network error"}"
+                                    snackbarHostState.showSnackbar("Sync failed: ${e.localizedMessage ?: "Error"}")
+                                }
+                            }
+                        },
+                        syncStatusMessage = syncStatusMessage
                     )
                 }
             }

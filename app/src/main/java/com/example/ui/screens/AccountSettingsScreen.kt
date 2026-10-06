@@ -87,6 +87,8 @@ fun AccountSettingsScreen(
     isDarkTheme: Boolean,
     onToggleDarkTheme: (Boolean) -> Unit,
     onLogout: () -> Unit,
+    onSyncToCloud: (() -> Unit)? = null,
+    syncStatusMessage: String? = null,
     modifier: Modifier = Modifier
 ) {
     var legalName by remember { mutableStateOf("Oistars International B.V.") }
@@ -432,6 +434,113 @@ fun AccountSettingsScreen(
                     title = "Health & Wellness Disclaimer",
                     onClick = { showHealthDisclaimerDialog = true }
                 )
+            }
+        }
+
+        // Section: Firebase Cloud Sync
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.5.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Firebase Cloud Database",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Surface(
+                        color = StatusPaid.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(StatusPaid)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Active",
+                                color = StatusPaid,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    text = "Cloud-backed persistence via Firebase Firestore Enterprise & Google Sign-In Authentication.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "Database ID: ai-studio-android-oistarsb-ae8638b7-0186-4ab3-a014-3348c77a4205",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Region: europe-west2 (London) • Auth: Google Identity",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                if (!syncStatusMessage.isNullOrBlank()) {
+                    Surface(
+                        color = OceanBlue.copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = syncStatusMessage,
+                            fontSize = 12.sp,
+                            color = OceanBlue,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                }
+
+                if (onSyncToCloud != null) {
+                    OutlinedButton(
+                        onClick = onSyncToCloud,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("sync_firestore_btn")
+                    ) {
+                        Icon(Icons.Default.AccountBalance, contentDescription = null, modifier = Modifier.size(16.dp), tint = OceanBlue)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Sync Local Ledger to Firestore", fontWeight = FontWeight.SemiBold)
+                    }
+                }
             }
         }
 

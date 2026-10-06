@@ -52,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -60,18 +61,25 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.rememberCoroutineScope
+import com.example.data.firebase.FirebaseAuthManager
 import com.example.ui.components.DataSafetyPolicyDialog
 import com.example.ui.components.SecurityPolicyDialog
 import com.example.ui.theme.AccentGold
 import com.example.ui.theme.NavyDark
 import com.example.ui.theme.OceanBlue
 import com.example.ui.theme.StatusPaid
+import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(
     onLoginSuccess: (email: String, userName: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val authManager = remember { FirebaseAuthManager(context) }
+
     var email by remember { mutableStateOf("westerveldjp@gmail.com") }
     var password by remember { mutableStateOf("oistars2026") }
     var passwordVisible by remember { mutableStateOf(false) }
@@ -94,7 +102,7 @@ fun LoginScreen(
         isLoading = true
         // Simulated local auth verification
         val name = when {
-            submittedEmail.contains("westerveld", ignoreCase = true) -> "Jan-Peter Westerveld"
+            submittedEmail.contains("westerveld", ignoreCase = true) -> "Jurgen Paul Westerveld"
             submittedEmail.contains("admin", ignoreCase = true) -> "Administrator"
             else -> submittedEmail.substringBefore("@").replace(".", " ").capitalizeWords()
         }
@@ -311,6 +319,55 @@ fun LoginScreen(
                                 text = "Sign In to Ledger",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    // Google Sign-In Option
+                    androidx.compose.material3.HorizontalDivider(modifier = Modifier.fillMaxWidth())
+
+                    OutlinedButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                isLoading = true
+                                errorMessage = null
+                                val result = authManager.signInWithGoogle()
+                                result.onSuccess { user ->
+                                    isLoading = false
+                                    onLoginSuccess(
+                                        user.email ?: "user@gmail.com",
+                                        user.displayName ?: "Google User"
+                                    )
+                                }.onFailure { e ->
+                                    isLoading = false
+                                    if (e !is androidx.credentials.exceptions.GetCredentialCancellationException) {
+                                        errorMessage = "Google Sign-In: ${e.localizedMessage ?: "Could not authenticate"}"
+                                    }
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                            .testTag("login_google_signin_btn")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "G",
+                                fontWeight = FontWeight.Black,
+                                fontSize = 18.sp,
+                                color = OceanBlue
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Sign in with Google",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }

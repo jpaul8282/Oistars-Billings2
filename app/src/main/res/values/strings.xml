@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">Oistars Billings</string>
+    <string name="default_web_client_id" translatable="false">45167772995-61lrkuos5rcl6mtv1fck02b2j6qfoksb.apps.googleusercontent.com</string>
 </resources>
 

@@ -7,6 +7,7 @@ This file documents the complete metadata and debug configuration required for G
 ```
 Package Name: com.oistars.billings
 Application ID: com.oistars.billings
+Billing Owner: Jurgen Paul Westerveld (westerveldjp@gmail.com)
 Minimum SDK: 24 (Android 7.0)
 Target SDK: 36 (Android 15)
 Version Code: 1
@@ -68,23 +69,23 @@ Business
 ## Screenshots
 
 ### Screen 1: Dashboard
-**File**: `assets/dashboard-screen.png`  
+**File**: `assets/dashboard-screen.svg`  
 **Caption**: "Real-time financial metrics and quick actions"
 
 ### Screen 2: Invoice List
-**File**: `assets/invoices-screen.png`  
+**File**: `assets/invoices-screen.svg`  
 **Caption**: "Filter, search, and manage invoices by status"
 
 ### Screen 3: Client Directory
-**File**: `assets/clients-screen.png`  
+**File**: `assets/clients-screen.svg`  
 **Caption**: "Organize and track your complete client database"
 
 ### Screen 4: Create Invoice
-**File**: `assets/create-invoice-screen.png`  
+**File**: `assets/create-invoice-screen.svg`  
 **Caption**: "Intuitive invoice creation with automatic calculations"
 
 ### Screen 5: Account Settings
-**File**: `assets/settings-screen.png`  
+**File**: `assets/settings-screen.svg`  
 **Caption**: "Customize theme and manage your account"
 
 ## Release Notes

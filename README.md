@@ -1,15 +1,16 @@
 # Oistars Billings
 
 > **Enterprise-Grade Billing, Invoicing & Financial Management Platform**  
-> Built with Kotlin, Jetpack Compose, and Material Design 3
+> Built with Kotlin, Jetpack Compose, and Material Design 3  
+> **Billing Owner & Lead**: Jurgen Paul Westerveld
 
-![Oistars Billings](./assets/oistars-billings-banner.png)
+![Oistars Billings](./assets/billing_dashboard_hero.jpg)
 
 ---
 
 ## 📱 Overview
 
-**Oistars Billings** is a comprehensive, offline-first billing platform designed for modern businesses, e-commerce brands, freelancers, and SMEs to manage their complete financial lifecycle with confidence and transparency.
+**Oistars Billings** is a comprehensive billing platform designed for modern businesses, e-commerce brands, freelancers, and SMEs to manage their complete financial lifecycle with confidence and transparency.
 
 ### ✨ Core Capabilities
 
@@ -21,18 +22,19 @@
 
 #### 👥 Client & Account Management
 - **High-Density Client Directory**: Store unlimited client profiles with contact details, tax IDs, billing addresses, and custom payment terms
+- **Billing Owner Controls**: Managed by Jurgen Paul Westerveld (`westerveldjp@gmail.com`) with organization-wide merchant controls
 - **Client Lifecycle Tracking**: Monitor payment history, outstanding balances, and collection status at a glance
 - **Enterprise Account Mapping**: Link multiple billing entities, subsidiaries, and cost centers to a single parent account
 
 #### 📊 Recurring Billing & Subscriptions
 - **Subscription Management**: Create recurring billing plans (monthly, quarterly, annual)
-- **Automated Invoice Generation**: Subscriptions auto-generate invoices on schedule
+- **Automated Invoice Generation**: Subscriptions auto-generate invoices on schedule with one-tap "Bill Now" actions
 - **Lifecycle Automation**: Pause, resume, or cancel subscriptions with financial reconciliation
 
 #### 🔐 Security & Compliance
 - **Offline-First Architecture**: All sensitive financial data stored locally on your device in encrypted Room SQLite database
-- **Production Release Enforcement**: Release builds fail fast if signing credentials are missing (prevents accidental debug-signed production releases)
-- **Financial Calculation Validation**: All invoice math (subtotal, tax, discount, payment) backed by unit tests
+- **Firebase Cloud Persistence**: Optional, zero-trust cloud sync to Firebase Firestore (`europe-west2`) backed by Google Sign-In Authentication
+- **Financial Calculation Validation**: All invoice math (subtotal, tax, discount, payment) backed by rigorous unit tests
 - **R8/ProGuard Obfuscation**: Release builds strip debugging symbols and unused code
 
 ---
@@ -40,24 +42,24 @@
 ## 📸 Screenshots & User Experience
 
 ### Dashboard Screen
-![Dashboard](./assets/dashboard-screen.png)  
-*Real-time financial metrics, recent transactions, and quick-action buttons*
+![Dashboard](./assets/dashboard-screen.svg)  
+*Real-time financial metrics, recent transactions, and floating action button (FAB) for quick invoice creation*
 
 ### Invoice Management
-![Invoices](./assets/invoices-screen.png)  
+![Invoices](./assets/invoices-screen.svg)  
 *Filter by status (Pending, Paid, Overdue), search, and export to PDF*
 
 ### Client Directory
-![Clients](./assets/clients-screen.png)  
+![Clients](./assets/clients-screen.svg)  
 *High-density client ledger with lifetime billing and collection status*
 
 ### Invoice Creation
-![Create Invoice](./assets/create-invoice-screen.png)  
+![Create Invoice](./assets/create-invoice-screen.svg)  
 *Intuitive modal form with itemized line items, auto-calculated totals, and tax handling*
 
 ### Account Settings
-![Settings](./assets/settings-screen.png)  
-*Dark/Light theme toggle, user profile, and logout management*
+![Settings](./assets/settings-screen.svg)  
+*Billing Owner profile (Jurgen Paul Westerveld), dark/light theme toggle, and Firebase Cloud Database sync status*
 
 ---
 
@@ -65,67 +67,70 @@
 
 ### Technology Stack
 - **UI Framework**: Jetpack Compose with Material Design 3
-- **Language**: Kotlin 2.0+ with Coroutines & StateFlow
-- **Persistence**: Room (SQLite) with KSP compiler
+- **Language**: Kotlin 2.2+ with Coroutines & StateFlow
+- **Persistence**: Room (SQLite) with KSP compiler & Firebase Firestore (Cloud Sync)
+- **Authentication**: Firebase Authentication with Google Sign-In via Jetpack Credential Manager
 - **Build System**: Gradle Kotlin DSL with Version Catalog
-- **Code Optimization**: Android R8 / ProGuard with aggressive shrinking & obfuscation
+- **Code Optimization**: Android R8 / ProGuard with shrinking & obfuscation
 - **Testing**: JUnit 4, Robolectric, Roborazzi
-- **Optional Cloud**: Firebase Generative AI, Firebase App Check
 
-### Local-First Data Flow
+### Data Flow Architecture
 ```
 UI (Compose) → ViewModel (StateFlow) → Repository → Room DAO → SQLite Database
                                      ↓
-                        Optional Firebase Sync
+                    Firestore Cloud Sync (/users/{userId}/...)
 ```
 
 ### Security Architecture
 
 #### Data Isolation
-- Application data lives exclusively in Android's protected internal sandbox (`/data/data/com.oistars.billings/`)
-- No broad external storage permissions requested
-- All sensitive credentials managed via secure environment variables, never hardcoded
+- Application data lives in Android's protected internal sandbox (`/data/data/com.oistars.billings/`)
+- Zero broad external storage permissions requested
+- All sensitive credentials managed via secure environment variables (`.env`)
 
 #### Production Signing Enforcement
 ```kotlin
-if (keystorePath == null || keystorePassword == null || keyPasswordValue == null) {
-    throw GradleException(
-        "Release builds require KEYSTORE_PATH, STORE_PASSWORD, and KEY_PASSWORD environment variables"
-    )
+val keystorePath = System.getenv("KEYSTORE_PATH")
+val keystorePassword = System.getenv("STORE_PASSWORD")
+val keyAliasValue = System.getenv("KEY_ALIAS") ?: "upload"
+val keyPasswordValue = System.getenv("KEY_PASSWORD")
+
+if (keystorePath != null && keystorePassword != null && keyPasswordValue != null) {
+  create("release") {
+    storeFile = file(keystorePath)
+    storePassword = keystorePassword
+    keyAlias = keyAliasValue
+    keyPassword = keyPasswordValue
+  }
 }
 ```
 
 #### Firebase Configuration Validation
 ```kotlin
-googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.FAIL }
+googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
 ```
 
 ---
 
-## 🔐 Firebase & Local-First Architecture
+## 🔐 Firebase & Cloud Architecture
 
-**Oistars Billings** operates as a **fully local-first billing platform** by design. All invoice data, client information, and transaction records are stored exclusively on the user's device within a secure Room SQLite database.
+**Oistars Billings** operates as a **local-first billing platform with secure cloud sync**. All invoice data, client information, and transaction records are stored reliably on the user's device and synchronized with Firebase Firestore when authenticated.
 
-### Optional Firebase Integration
+### Firebase Integration Specifications
 
-The app can optionally integrate with Firebase for:
-- **Generative AI Features**: AI-assisted invoice descriptions, payment reminders, and insights (Firebase Generative AI)
-- **App Security & Attestation**: Device integrity verification and anti-tampering checks (Firebase App Check)
-- **Optional Cloud Backup**: Manual synchronization of financial records (when explicitly enabled by user)
+- **Database ID**: `ai-studio-android-oistarsb-ae8638b7-0186-4ab3-a014-3348c77a4205`
+- **Region**: `europe-west2` (London)
+- **Authentication**: Google Sign-In via Jetpack `CredentialManager` (`GetSignInWithGoogleOption`)
+- **Security Rules**: Enforces `request.auth != null && request.auth.uid == userId` for all paths under `/users/{userId}/...`
 
 ### Configuration Requirements
 
 | Component | Requirement | Impact on Build |
 |-----------|-------------|------------------|
-| `google-services.json` | Required if Firebase is enabled | **Build FAILS** if missing (prevents misconfiguration) |
-| `KEYSTORE_PATH` | Required for release builds | **Build FAILS** if missing (prevents debug-signed releases) |
-| `STORE_PASSWORD` | Required for release builds | **Build FAILS** if missing |
-| `KEY_PASSWORD` | Required for release builds | **Build FAILS** if missing |
-
-**Why we fail-fast**: This approach prevents silent misconfiguration that could lead to:
-- Accidental unsigned or debug-signed production releases
-- Firebase features silently failing at runtime
-- Unencrypted credentials in build artifacts
+| `google-services.json` | Required for Firebase features | Validated via Google Services Gradle plugin |
+| `KEYSTORE_PATH` | Required for production release signing | Configures release signing when present |
+| `STORE_PASSWORD` | Required for production release signing | Configures release signing when present |
+| `KEY_PASSWORD` | Required for production release signing | Configures release signing when present |
 
 ---
 
@@ -152,10 +157,10 @@ fun `overpayment clamps to zero balance`() {
 ✅ **Static Code Analysis**
 - R8/ProGuard rules enforce code shrinking in release builds
 - Lint checks enabled for API deprecations and security warnings
-- No dynamic reflection or unsafe `System.load()` calls
+- Parameterized SQLite queries via Room prevent SQL injection
 
 ✅ **Dependency Management**
-- Version Catalog (`libs.versions.toml`) centralizes dependency versions
+- Version Catalog (`gradle/libs.versions.toml`) centralizes dependency versions
 - Regular updates via Gradle dependency management
 - No hardcoded version strings in build scripts
 
@@ -172,16 +177,15 @@ fun `overpayment clamps to zero balance`() {
 - `.env` files excluded from version control via `.gitignore`
 
 ✅ **Least Privilege Access**
-- Android permissions requested only when necessary
-- No `READ_EXTERNAL_STORAGE` or `WRITE_EXTERNAL_STORAGE` permissions
-- Network access restricted to authorized endpoints only
+- Zero broad storage permissions (`READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE` not used)
+- Network access restricted to secure Google Identity and Firebase endpoints
 
 ### 3. Release & Deployment Security
 
 ✅ **Code Signing**
-- All production releases signed with a private keystore
-- Debug and release signing configs kept separate
-- Build process enforces strict credential validation (no fallback to debug credentials)
+- All production releases signed with private keystore credentials
+- Debug and release signing configs separated cleanly
+- Debug builds use automated container keys
 
 ✅ **Obfuscation & Shrinking**
 ```gradle
@@ -192,16 +196,12 @@ release {
 }
 ```
 
-✅ **Transparent Versioning**
-- Version codes and names clearly tracked in `build.gradle.kts`
-- Release notes document security patches and changes
-
 ### 4. Vulnerability Disclosure & Response
 
 ✅ **Responsible Disclosure Policy**
 If you discover a security vulnerability:
 1. **Do NOT** open a public GitHub issue
-2. Email `security@oistars.example.com` with:
+2. Email `oistarsentertainment@gmail.com` with:
    - Steps to reproduce
    - Impact assessment
    - Device/environment details
@@ -211,28 +211,24 @@ If you discover a security vulnerability:
 ### 5. Compliance Standards
 
 ✅ **GDPR & Data Privacy**
-- No third-party analytics or tracking SDKs
 - Full data ownership by the user
-- One-click data deletion via Android system settings
+- One-click data deletion via Android system settings or account reset
+- Zero third-party ad tracking SDKs
 
 ✅ **Financial Compliance**
-- Invoice calculations comply with standard accounting practices
-- Tax handling supports multiple jurisdictions
-- Transaction audit trail maintained in local database
-
-✅ **Google Play Store Compliance**
-- No ads or invasive tracking
-- Transparent permission usage
-- Regular security updates
+- Invoice calculations comply with standard European VAT & international accounting rules
+- Multi-currency precision handling
+- Complete audit trail of invoices and transaction settlements
 
 ---
 
-## 📋 Google Play Store Metadata & Debug Configuration
+## 📋 Google Play Store Metadata
 
 ### App Listing Details
 
 **App Name**: Oistars Billings  
 **Package Name**: `com.oistars.billings`  
+**Billing Owner**: Jurgen Paul Westerveld  
 **Minimum SDK**: 24 (Android 7.0 Nougat)  
 **Target SDK**: 36 (Android 15)  
 **Category**: Business / Finance  
@@ -243,27 +239,28 @@ If you discover a security vulnerability:
 Professional invoicing, billing & client management. Offline-first, secure.
 ```
 
-### Full Description (4000 characters)
+### Full Description
 ```
 Oistars Billings is your complete financial management platform for invoicing,
 client ledger management, recurring subscriptions, and payment tracking.
 
 ✨ Key Features:
-• Professional invoice creation with automatic calculations
-• Real-time financial metrics and collection tracking
+• Professional invoice creation with automatic tax & discount calculations
+• Real-time financial metrics, cash flow health & collection tracking
+• Quick invoice creation via Floating Action Button (FAB)
 • Multi-currency support (EUR, USD, GBP, and more)
-• Offline-first architecture—all data stored securely on your device
+• Offline-first local database with optional Firebase cloud sync
 • Dark/Light theme for comfortable use any time
 • PDF export and printing support
-• Recurring billing automation
-• Client directory with payment history
+• Recurring billing and retainer automation
+• Client directory with payment histories
 
 🔐 Security First:
-• End-to-end encrypted local storage
-• No cloud dependency (optional Firebase integration)
+• End-to-end encrypted storage
+• Zero-trust Firebase Firestore rules
 • Production-grade code signing & obfuscation
-• Transparent handling of sensitive data
 • GDPR compliant (full data ownership)
+• No third-party ad trackers
 
 💼 Built for Professionals:
 • Freelancers managing client projects
@@ -273,76 +270,6 @@ client ledger management, recurring subscriptions, and payment tracking.
 
 Download Oistars Billings today and take control of your finances.
 ```
-
-### Screenshots for Play Store
-1. **Dashboard**: "Real-time financial visibility"
-2. **Invoices**: "Create and manage professional invoices"
-3. **Clients**: "Organize your client database"
-4. **Subscriptions**: "Automate recurring billing"
-5. **Settings**: "Customize your experience"
-
-### Release Notes Template
-```markdown
-## Version 1.0.0 (Initial Release)
-
-### 🎉 Launch Features
-- Professional invoice management
-- Client directory with payment tracking
-- Recurring subscription automation
-- Multi-currency support
-- Offline-first local storage
-- PDF export and printing
-
-### 🔐 Security
-- End-to-end encrypted database
-- Production-grade code signing
-- GDPR compliant data handling
-
-### 🐛 Bug Fixes & Improvements
-- Fixed payment calculation edge cases
-- Improved dark theme contrast
-- Optimized database queries
-
-### 📋 Known Limitations
-- Firebase sync is optional (manual configuration required)
-- Print feature requires API level 19+
-```
-
-### Debug & Testing Manifest
-
-**For internal testing, QA, and beta distribution:**
-
-#### Test Credentials
-```properties
-# .env (debug environment)
-TEST_CLIENT_NAME=Acme Corporation
-TEST_CLIENT_EMAIL=accounting@acme.local
-TEST_INVOICE_AMOUNT=1000.00
-TEST_TAX_RATE=0.20
-```
-
-#### Debug Build Features
-```gradle
-debug {
-    debuggable = true
-    signingConfig = signingConfigs.getByName("debugConfig")
-    // Logging enabled for debugging
-    buildConfigField("BOOLEAN", "DEBUG_LOGGING", "true")
-}
-```
-
-#### Test Scenarios
-1. **Invoice Creation**: Create test invoice with itemized line items
-2. **Payment Recording**: Record partial and full payments
-3. **Subscription**: Verify auto-invoice generation
-4. **Currency**: Test multi-currency calculations
-5. **Offline**: Verify data persistence with network disabled
-6. **Backup/Restore**: Test data export and import
-
-#### Crash Testing & Monitoring
-- Crashes logged to Android Logcat
-- Stack traces available in release builds (when debugging is enabled)
-- Firebase Crashlytics integration (optional)
 
 ---
 
@@ -399,21 +326,20 @@ fun `overpayment clamps to zero balance`() {
 
 ### Prerequisites
 - Android Studio Koala (2024.1.1) or later
-- Kotlin 2.0+
+- Kotlin 2.2+
 - Gradle 8.5+
 - JDK 11+
 
 ### Clone & Build
 ```bash
-git clone https://github.com/jurgen-paul/Oistars-Billings.git
-cd Oistars-Billings
-./gradlew build
+git clone https://github.com/jpaul8282/Oistars-Billings2.git
+cd Oistars-Billings2
+gradle assembleDebug
 ```
 
-### Run on Emulator
+### Run Unit Tests
 ```bash
-./gradlew installDebug
-adb shell am start -n com.oistars.billings/.MainActivity
+gradle :app:testDebugUnitTest
 ```
 
 ### Release Build
@@ -421,7 +347,7 @@ adb shell am start -n com.oistars.billings/.MainActivity
 export KEYSTORE_PATH=/path/to/keystore.jks
 export STORE_PASSWORD=your-store-password
 export KEY_PASSWORD=your-key-password
-./gradlew assembleRelease
+gradle assembleRelease
 ```
 
 ---
@@ -429,11 +355,13 @@ export KEY_PASSWORD=your-key-password
 ## 📄 License & Attribution
 
 Copyright © 2026 Oistars. All rights reserved.  
+**Billing Owner**: Jurgen Paul Westerveld  
 Distributed under the proprietary software license terms of this project.
 
 Built with:
 - Jetpack Compose (Google)
 - Room Database (Google)
+- Firebase Firestore & Auth (Google)
 - Material Design 3 (Google)
 - Kotlin (JetBrains)
 
@@ -443,8 +371,9 @@ Built with:
 
 For questions, bug reports, or feature requests:
 - Open an issue on GitHub
-- Email: oistarsentertainment@gmail.com
-- Report security vulnerabilities responsibly: oistarsentertainment@gmail.com
+- Billing Owner Contact: Jurgen Paul Westerveld (`westerveldjp@gmail.com`)
+- Support Email: `oistarsentertainment@gmail.com`
+- Security Disclosures: `oistarsentertainment@gmail.com`
 
 ---
 

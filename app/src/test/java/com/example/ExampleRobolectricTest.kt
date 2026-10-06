@@ -26,7 +26,7 @@ class ExampleRobolectricTest {
       com.example.data.local.ClientEntity(
         id = "CLI-1001",
         name = "Oistars Seafood E-Commerce B.V.",
-        contactPerson = "Jan-Peter Westerveld",
+        contactPerson = "Jurgen Paul Westerveld",
         email = "westerveldjp@gmail.com"
       ),
       com.example.data.local.ClientEntity(
