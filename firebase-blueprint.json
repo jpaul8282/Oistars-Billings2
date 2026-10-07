@@ -14,7 +14,7 @@
     },
     "Client": {
       "title": "Client Store",
-      "description": "Client profile, address, contact and payment terms",
+      "description": "Client profile, address, contact, payment terms and account status",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
@@ -29,6 +29,11 @@
         "currency": { "type": "string" },
         "paymentTermsDays": { "type": "integer" },
         "notes": { "type": "string" },
+        "accountStatus": { "type": "string" },
+        "totalInvoiced": { "type": "number" },
+        "totalPaid": { "type": "number" },
+        "outstandingBalance": { "type": "number" },
+        "openInvoicesCount": { "type": "integer" },
         "createdAt": { "type": "integer" }
       },
       "required": ["id", "userId", "name"]

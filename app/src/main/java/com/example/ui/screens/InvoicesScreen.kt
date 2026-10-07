@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowForwardIos
+import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Payment
@@ -40,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -250,6 +252,7 @@ fun InvoiceListItemCard(
     invoice: InvoiceEntity,
     onClick: () -> Unit,
     onMarkAsPaid: () -> Unit,
+    onSelectClient: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showExportPdf by remember { mutableStateOf(false) }
@@ -293,12 +296,30 @@ fun InvoiceListItemCard(
             Spacer(modifier = Modifier.height(6.dp))
 
             // Client Name & Item Summary
-            Text(
-                text = invoice.clientName,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = if (onSelectClient != null) {
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable { onSelectClient(invoice.clientId) }
+                } else Modifier
+            ) {
+                Text(
+                    text = invoice.clientName,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    color = if (onSelectClient != null) OceanBlue else MaterialTheme.colorScheme.onSurface
+                )
+                if (onSelectClient != null) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Default.Business,
+                        contentDescription = "View Store",
+                        tint = OceanBlue.copy(alpha = 0.7f),
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
 
             val firstItem = invoice.items.firstOrNull()?.description
             if (!firstItem.isNullOrBlank()) {

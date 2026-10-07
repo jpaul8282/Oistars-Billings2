@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Payments
@@ -63,12 +66,18 @@ import com.example.data.model.InvoiceItem
 import com.example.ui.components.Formatters
 import com.example.ui.components.MetricStatCard
 import com.example.ui.components.QuickCreateInvoiceDialog
+import com.example.ui.screens.ClientDetailModal
 import com.example.ui.theme.AccentGold
 import com.example.ui.theme.NavyDark
 import com.example.ui.theme.OceanBlue
+import com.example.ui.theme.StatusDraft
+import com.example.ui.theme.StatusDraftBg
 import com.example.ui.theme.StatusOverdue
+import com.example.ui.theme.StatusOverdueBg
 import com.example.ui.theme.StatusPaid
+import com.example.ui.theme.StatusPaidBg
 import com.example.ui.theme.StatusPending
+import com.example.ui.theme.StatusPendingBg
 import com.example.ui.viewmodel.FinancialMetrics
 
 @Composable
@@ -80,6 +89,8 @@ fun DashboardScreen(
     onNavigateToInvoices: () -> Unit,
     onNavigateToClients: () -> Unit,
     onNavigateToSubscriptions: () -> Unit,
+    onNavigateToPayouts: (() -> Unit)? = null,
+    ownerAvailableBalance: Double = 0.0,
     onMarkAsPaid: (InvoiceEntity) -> Unit,
     onRecordPayment: (InvoiceEntity, Double, String, String, String) -> Unit,
     onDeleteInvoice: (InvoiceEntity) -> Unit,
@@ -99,6 +110,8 @@ fun DashboardScreen(
     var showQuickCreateDialog by remember { mutableStateOf(false) }
     var showCreateInvoiceSheet by remember { mutableStateOf(false) }
     var selectedInvoiceForDetail by remember { mutableStateOf<InvoiceEntity?>(null) }
+    var selectedClientForDetail by remember { mutableStateOf<ClientEntity?>(null) }
+    var preselectedClientForInvoice by remember { mutableStateOf<ClientEntity?>(null) }
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(
@@ -209,7 +222,92 @@ fun DashboardScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Owner Payout Quick Settlement Section
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("dashboard_owner_payout_card"),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = OceanBlue.copy(alpha = 0.12f),
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Default.Payments,
+                                    contentDescription = "Owner Payout",
+                                    tint = OceanBlue,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Owner Payouts",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    color = StatusPaid.copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = "ING Bank",
+                                        color = StatusPaid,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Available: ${Formatters.formatCurrency(ownerAvailableBalance)} • SEPA Instant",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    if (onNavigateToPayouts != null) {
+                        Button(
+                            onClick = onNavigateToPayouts,
+                            colors = ButtonDefaults.buttonColors(containerColor = OceanBlue),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.testTag("btn_dashboard_manage_payouts")
+                        ) {
+                            Text("Withdraw", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
 
             // Cash Flow Visual Health Bar
             val total = (metrics.totalPaid + metrics.totalOutstanding).coerceAtLeast(1.0)
@@ -380,6 +478,74 @@ fun DashboardScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
+            // Client Stores Directory Section (Selectable from Dashboard)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "Client Stores & Accounts",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Select any store to view billing ledger, contacts & retainers",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                TextButton(
+                    onClick = onNavigateToClients,
+                    modifier = Modifier.testTag("dashboard_view_all_stores_btn")
+                ) {
+                    Text("All Stores (${clients.size})", fontSize = 12.sp)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (clients.isEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No client stores registered yet",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(horizontal = 2.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("dashboard_clients_row")
+                ) {
+                    items(clients, key = { it.id }) { client ->
+                        DashboardClientCard(
+                            client = client,
+                            invoices = recentInvoices,
+                            subscriptions = activeSubscriptions,
+                            onClick = { selectedClientForDetail = client }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
             // Active Subscriptions Section
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -450,7 +616,18 @@ fun DashboardScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(sub.clientName, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text(
+                                    text = sub.clientName,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = OceanBlue,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .clickable {
+                                            val cl = clients.find { it.id == sub.clientId || it.name.equals(sub.clientName, ignoreCase = true) }
+                                            cl?.let { selectedClientForDetail = it }
+                                        }
+                                )
                                 Text(sub.planName, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text(
                                     text = "Next: ${Formatters.formatShortDate(sub.nextBillingDate)} • ${Formatters.formatCurrency(sub.amount, sub.currency)} / ${sub.billingInterval.label.lowercase()}",
@@ -494,7 +671,11 @@ fun DashboardScreen(
                     InvoiceListItemCard(
                         invoice = invoice,
                         onClick = { selectedInvoiceForDetail = invoice },
-                        onMarkAsPaid = { onMarkAsPaid(invoice) }
+                        onMarkAsPaid = { onMarkAsPaid(invoice) },
+                        onSelectClient = { clientId ->
+                            val cl = clients.find { it.id == clientId || it.name.equals(invoice.clientName, ignoreCase = true) }
+                            cl?.let { selectedClientForDetail = it }
+                        }
                     )
                 }
             }
@@ -550,10 +731,15 @@ fun DashboardScreen(
     if (showCreateInvoiceSheet) {
         CreateInvoiceSheet(
             clients = clients,
-            onDismiss = { showCreateInvoiceSheet = false },
+            preselectedClient = preselectedClientForInvoice,
+            onDismiss = {
+                showCreateInvoiceSheet = false
+                preselectedClientForInvoice = null
+            },
             onSaveInvoice = { clientId, clientName, clientEmail, items, paymentTerms, notes, status, currency ->
                 onSaveInvoice(clientId, clientName, clientEmail, items, paymentTerms, notes, status, currency)
                 showCreateInvoiceSheet = false
+                preselectedClientForInvoice = null
             }
         )
     }
@@ -575,5 +761,245 @@ fun DashboardScreen(
                 selectedInvoiceForDetail = null
             }
         )
+    }
+
+    // Modal detailed view triggered when a client is selected from the dashboard
+    selectedClientForDetail?.let { client ->
+        ClientDetailModal(
+            client = client,
+            invoices = recentInvoices,
+            subscriptions = activeSubscriptions,
+            onDismiss = { selectedClientForDetail = null },
+            onCreateInvoiceForClient = { cl ->
+                selectedClientForDetail = null
+                preselectedClientForInvoice = cl
+                showCreateInvoiceSheet = true
+            },
+            onViewInvoiceDetail = { inv ->
+                selectedInvoiceForDetail = inv
+            },
+            onMarkInvoiceAsPaid = { inv ->
+                onMarkAsPaid(inv)
+            },
+            onBillSubscriptionNow = { sub ->
+                onGenerateFromSubscription(sub)
+            }
+        )
+    }
+}
+
+/**
+ * Rich Card component displayed in the Client Stores carousel on the Dashboard.
+ * Tapping triggers the ClientDetailModal.
+ */
+@Composable
+private fun DashboardClientCard(
+    client: ClientEntity,
+    invoices: List<InvoiceEntity>,
+    subscriptions: List<SubscriptionEntity>,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val clientInvoices = remember(invoices, client.id) {
+        invoices.filter { it.clientId == client.id || it.clientName.equals(client.name, ignoreCase = true) }
+    }
+    val clientSubscriptions = remember(subscriptions, client.id) {
+        subscriptions.filter { it.clientId == client.id || it.clientName.equals(client.name, ignoreCase = true) }
+    }
+
+    val totalBilled = clientInvoices.sumOf { it.totalAmount }
+    val balanceDue = clientInvoices.sumOf { it.balanceDue }
+    val overdueCount = clientInvoices.count { it.invoiceStatus == com.example.data.model.InvoiceStatus.OVERDUE }
+    val pendingCount = clientInvoices.count { it.invoiceStatus == com.example.data.model.InvoiceStatus.PENDING }
+    val paidCount = clientInvoices.count { it.invoiceStatus == com.example.data.model.InvoiceStatus.PAID }
+    val activeSubsCount = clientSubscriptions.count { it.subscriptionStatus == com.example.data.model.SubscriptionStatus.ACTIVE }
+
+    val initials = client.name
+        .split(" ")
+        .filter { it.isNotBlank() }
+        .take(2)
+        .mapNotNull { it.firstOrNull()?.uppercase() }
+        .joinToString("")
+        .ifBlank { "CL" }
+
+    Card(
+        modifier = modifier
+            .width(220.dp)
+            .clickable { onClick() }
+            .testTag("dashboard_client_card_${client.id}"),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp)
+        ) {
+            // Header: Avatar & Health Pill
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = NavyDark,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = initials,
+                            color = AccentGold,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = when {
+                        overdueCount > 0 -> StatusOverdueBg
+                        pendingCount > 0 -> StatusPendingBg
+                        paidCount > 0 -> StatusPaidBg
+                        else -> StatusDraftBg
+                    }
+                ) {
+                    Text(
+                        text = when {
+                            overdueCount > 0 -> "OVERDUE ($overdueCount)"
+                            pendingCount > 0 -> "PENDING"
+                            paidCount > 0 -> "ALL SETTLED"
+                            else -> "NEW"
+                        },
+                        color = when {
+                            overdueCount > 0 -> StatusOverdue
+                            pendingCount > 0 -> StatusPending
+                            paidCount > 0 -> StatusPaid
+                            else -> StatusDraft
+                        },
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Store Name & Contact
+            Text(
+                text = client.name,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+
+            Text(
+                text = if (client.contactPerson.isNotBlank()) client.contactPerson else client.id,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Financial Summary Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "Total Invoiced",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = Formatters.formatCurrency(totalBilled, client.currency),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                if (balanceDue > 0) {
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = "Due",
+                            fontSize = 10.sp,
+                            color = if (overdueCount > 0) StatusOverdue else StatusPending
+                        )
+                        Text(
+                            text = Formatters.formatCurrency(balanceDue, client.currency),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (overdueCount > 0) StatusOverdue else StatusPending
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Footer Tags: Retainers & Invoices count
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Receipt,
+                            contentDescription = null,
+                            modifier = Modifier.size(10.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = "${clientInvoices.size} inv",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                if (activeSubsCount > 0) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = OceanBlue.copy(alpha = 0.12f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Autorenew,
+                                contentDescription = null,
+                                modifier = Modifier.size(10.dp),
+                                tint = OceanBlue
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "$activeSubsCount retainer",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = OceanBlue
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }

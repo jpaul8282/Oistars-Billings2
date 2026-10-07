@@ -19,9 +19,10 @@ import kotlinx.coroutines.launch
         ClientEntity::class,
         InvoiceEntity::class,
         SubscriptionEntity::class,
-        PaymentEntity::class
+        PaymentEntity::class,
+        PayoutEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -29,6 +30,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun invoiceDao(): InvoiceDao
     abstract fun subscriptionDao(): SubscriptionDao
     abstract fun paymentDao(): PaymentDao
+    abstract fun payoutDao(): PayoutDao
 
     companion object {
         @Volatile
@@ -58,6 +60,35 @@ abstract class AppDatabase : RoomDatabase() {
             INSTANCE?.let { database ->
                 scope.launch(Dispatchers.IO) {
                     populateInitialData(database)
+                }
+            }
+        }
+
+        override fun onDestructiveMigration(db: SupportSQLiteDatabase) {
+            super.onDestructiveMigration(db)
+            INSTANCE?.let { database ->
+                scope.launch(Dispatchers.IO) {
+                    populateInitialData(database)
+                }
+            }
+        }
+
+        override fun onOpen(db: SupportSQLiteDatabase) {
+            super.onOpen(db)
+            INSTANCE?.let { database ->
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        val cursor = db.query("SELECT COUNT(*) FROM clients")
+                        var count = 0
+                        if (cursor.moveToFirst()) {
+                            count = cursor.getInt(0)
+                        }
+                        cursor.close()
+                        if (count == 0) {
+                            populateInitialData(database)
+                        }
+                    } catch (_: Exception) {
+                    }
                 }
             }
         }
@@ -313,6 +344,70 @@ abstract class AppDatabase : RoomDatabase() {
             )
 
             paymentDao.insertPayments(listOf(p1))
+
+            // 5. Seed Owner Payouts for Jurgen Paul Westerveld
+            val payoutDao = database.payoutDao()
+            val po1 = PayoutEntity(
+                id = "PO-920194",
+                ownerId = "jurgen-westerveld",
+                ownerName = "Jurgen Paul Westerveld",
+                amount = 2300.00,
+                currency = "EUR",
+                fee = 0.0,
+                netAmount = 2300.00,
+                status = PayoutStatus.COMPLETED.name,
+                destinationBank = "ING Bank N.V.",
+                destinationIban = "NL91 INGB 0412 8923 00",
+                destinationBic = "INGBNL2A",
+                payoutSpeed = PayoutSpeed.INSTANT.name,
+                reference = "Bi-weekly Owner Profit Draw #41",
+                initiatedAt = now - (10 * dayMs),
+                estimatedArrivalAt = now - (10 * dayMs),
+                completedAt = now - (10 * dayMs),
+                notes = "Settled instantly via SEPA Instant Credit Transfer"
+            )
+
+            val po2 = PayoutEntity(
+                id = "PO-918402",
+                ownerId = "jurgen-westerveld",
+                ownerName = "Jurgen Paul Westerveld",
+                amount = 1850.00,
+                currency = "EUR",
+                fee = 0.0,
+                netAmount = 1850.00,
+                status = PayoutStatus.COMPLETED.name,
+                destinationBank = "ING Bank N.V.",
+                destinationIban = "NL91 INGB 0412 8923 00",
+                destinationBic = "INGBNL2A",
+                payoutSpeed = PayoutSpeed.STANDARD.name,
+                reference = "Q3 Merchant Settlement Distribution",
+                initiatedAt = now - (25 * dayMs),
+                estimatedArrivalAt = now - (24 * dayMs),
+                completedAt = now - (24 * dayMs),
+                notes = "Scheduled automated Friday payout batch"
+            )
+
+            val po3 = PayoutEntity(
+                id = "PO-923811",
+                ownerId = "jurgen-westerveld",
+                ownerName = "Jurgen Paul Westerveld",
+                amount = 950.00,
+                currency = "EUR",
+                fee = 0.0,
+                netAmount = 950.00,
+                status = PayoutStatus.COMPLETED.name,
+                destinationBank = "ING Bank N.V.",
+                destinationIban = "NL91 INGB 0412 8923 00",
+                destinationBic = "INGBNL2A",
+                payoutSpeed = PayoutSpeed.INSTANT.name,
+                reference = "Retainer & Subscription Commission",
+                initiatedAt = now - (4 * dayMs),
+                estimatedArrivalAt = now - (4 * dayMs),
+                completedAt = now - (4 * dayMs),
+                notes = "Direct bank transfer to primary business settlement account"
+            )
+
+            payoutDao.insertPayouts(listOf(po1, po2, po3))
         }
     }
 }

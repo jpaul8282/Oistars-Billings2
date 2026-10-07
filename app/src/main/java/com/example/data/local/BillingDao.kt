@@ -103,3 +103,33 @@ interface PaymentDao {
     @Delete
     suspend fun deletePayment(payment: PaymentEntity)
 }
+
+@Dao
+interface PayoutDao {
+    @Query("SELECT * FROM payouts ORDER BY initiatedAt DESC")
+    fun getAllPayouts(): Flow<List<PayoutEntity>>
+
+    @Query("SELECT * FROM payouts WHERE id = :id LIMIT 1")
+    suspend fun getPayoutById(id: String): PayoutEntity?
+
+    @Query("SELECT * FROM payouts WHERE status = :status ORDER BY initiatedAt DESC")
+    fun getPayoutsByStatus(status: String): Flow<List<PayoutEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPayout(payout: PayoutEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPayouts(payouts: List<PayoutEntity>)
+
+    @Update
+    suspend fun updatePayout(payout: PayoutEntity)
+
+    @Delete
+    suspend fun deletePayout(payout: PayoutEntity)
+
+    @Query("UPDATE payouts SET status = :status WHERE id = :id")
+    suspend fun updatePayoutStatus(id: String, status: String)
+
+    @Query("DELETE FROM payouts WHERE id = :id")
+    suspend fun deletePayoutById(id: String)
+}

@@ -21,6 +21,7 @@
 - **Advanced Line-Item Management**: Itemized billing with per-item discounts, quantity tracking, and tax-per-item granularity
 
 #### 👥 Client & Account Management
+- **Firestore Client Dashboard**: Live cloud registry retrieving clients directly from Firebase Firestore, showing names and account status (Good Standing, Active, Pending Balance, Overdue, Inactive)
 - **High-Density Client Directory**: Store unlimited client profiles with contact details, tax IDs, billing addresses, and custom payment terms
 - **Billing Owner Controls**: Managed by Jurgen Paul Westerveld (`westerveldjp@gmail.com`) with organization-wide merchant controls
 - **Client Lifecycle Tracking**: Monitor payment history, outstanding balances, and collection status at a glance
@@ -97,10 +98,13 @@ val keyPasswordValue = System.getenv("KEY_PASSWORD")
 
 if (keystorePath != null && keystorePassword != null && keyPasswordValue != null) {
   create("release") {
-    storeFile = file(keystorePath)
-    storePassword = keystorePassword
-    keyAlias = keyAliasValue
-    keyPassword = keyPasswordValue
+    val keystoreFile = file(keystorePath)
+    if (keystoreFile.exists()) {
+      storeFile = keystoreFile
+      storePassword = keystorePassword
+      keyAlias = keyAliasValue
+      keyPassword = keyPasswordValue
+    }
   }
 }
 ```
@@ -188,7 +192,7 @@ fun `overpayment clamps to zero balance`() {
 - Debug builds use automated container keys
 
 ✅ **Obfuscation & Shrinking**
-```gradle
+```kotlin
 release {
     isMinifyEnabled = true
     isShrinkResources = true
@@ -230,7 +234,7 @@ If you discover a security vulnerability:
 **Package Name**: `com.oistars.billings`  
 **Billing Owner**: Jurgen Paul Westerveld  
 **Minimum SDK**: 24 (Android 7.0 Nougat)  
-**Target SDK**: 36 (Android 15)  
+**Target SDK**: 36 (Android 16)  
 **Category**: Business / Finance  
 **Content Rating**: 4+ (No objectionable content)  
 

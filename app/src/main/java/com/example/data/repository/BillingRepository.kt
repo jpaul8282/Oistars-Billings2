@@ -4,6 +4,7 @@ import com.example.data.local.AppDatabase
 import com.example.data.local.ClientEntity
 import com.example.data.local.InvoiceEntity
 import com.example.data.local.PaymentEntity
+import com.example.data.local.PayoutEntity
 import com.example.data.local.SubscriptionEntity
 import com.example.data.model.InvoiceItem
 import com.example.data.model.InvoiceItemSerializer
@@ -15,6 +16,7 @@ class BillingRepository(private val database: AppDatabase) {
     private val invoiceDao = database.invoiceDao()
     private val subscriptionDao = database.subscriptionDao()
     private val paymentDao = database.paymentDao()
+    private val payoutDao = database.payoutDao()
 
     // --- Clients ---
     val allClients: Flow<List<ClientEntity>> = clientDao.getAllClients()
@@ -173,5 +175,26 @@ class BillingRepository(private val database: AppDatabase) {
 
     suspend fun savePayment(payment: PaymentEntity) {
         paymentDao.insertPayment(payment)
+    }
+
+    // --- Owner Payouts ---
+    val allPayouts: Flow<List<PayoutEntity>> = payoutDao.getAllPayouts()
+
+    suspend fun getPayoutById(id: String): PayoutEntity? = payoutDao.getPayoutById(id)
+
+    suspend fun savePayout(payout: PayoutEntity) {
+        payoutDao.insertPayout(payout)
+    }
+
+    suspend fun updatePayout(payout: PayoutEntity) {
+        payoutDao.updatePayout(payout)
+    }
+
+    suspend fun updatePayoutStatus(id: String, status: String) {
+        payoutDao.updatePayoutStatus(id, status)
+    }
+
+    suspend fun deletePayout(payout: PayoutEntity) {
+        payoutDao.deletePayout(payout)
     }
 }

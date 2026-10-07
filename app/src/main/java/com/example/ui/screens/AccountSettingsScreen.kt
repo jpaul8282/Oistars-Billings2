@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Policy
 import androidx.compose.material.icons.filled.Save
@@ -46,6 +47,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -84,13 +86,19 @@ import com.example.ui.theme.StatusPending
 fun AccountSettingsScreen(
     userEmail: String,
     userName: String,
+    onUpdateUserName: ((String) -> Unit)? = null,
+    onUpdateUserEmail: ((String) -> Unit)? = null,
     isDarkTheme: Boolean,
     onToggleDarkTheme: (Boolean) -> Unit,
     onLogout: () -> Unit,
+    onNavigateToPayouts: (() -> Unit)? = null,
     onSyncToCloud: (() -> Unit)? = null,
     syncStatusMessage: String? = null,
     modifier: Modifier = Modifier
 ) {
+    var billingOwnerName by remember { mutableStateOf(userName.ifBlank { "Jurgen Paul Westerveld" }) }
+    var billingOwnerEmail by remember { mutableStateOf(userEmail.ifBlank { "westerveldjp@gmail.com" }) }
+
     var legalName by remember { mutableStateOf("Oistars International B.V.") }
     var vatNumber by remember { mutableStateOf("NL849302194B01") }
     var kvkNumber by remember { mutableStateOf("83920194") }
@@ -120,59 +128,123 @@ fun AccountSettingsScreen(
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // User Profile Card
+        // User Profile & Billing Owner Card
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("billing_owner_card"),
             shape = RoundedCornerShape(18.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(18.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(18.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(54.dp)
-                        .clip(CircleShape)
-                        .background(NavyDark),
-                    contentAlignment = Alignment.Center
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = userName.take(2).uppercase(),
-                        color = AccentGold,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(16.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = userName,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = userEmail,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Surface(
-                        color = StatusPaid.copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(6.dp)
+                    Box(
+                        modifier = Modifier
+                            .size(54.dp)
+                            .clip(CircleShape)
+                            .background(NavyDark),
+                        contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "Admin • Billing Owner",
-                            color = StatusPaid,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            text = billingOwnerName.take(2).uppercase(),
+                            color = AccentGold,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp
                         )
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = billingOwnerName,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = billingOwnerEmail,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Surface(
+                            color = StatusPaid.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "Admin • Billing Owner",
+                                color = StatusPaid,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Edit Billing Owner Details",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = billingOwnerName,
+                    onValueChange = {
+                        billingOwnerName = it
+                        onUpdateUserName?.invoke(it)
+                    },
+                    label = { Text("Billing Owner Full Name") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("billing_owner_name_input")
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = billingOwnerEmail,
+                    onValueChange = {
+                        billingOwnerEmail = it
+                        onUpdateUserEmail?.invoke(it)
+                    },
+                    label = { Text("Billing Owner Email") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("billing_owner_email_input")
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(
+                        onClick = {
+                            billingOwnerName = "Jurgen Paul Westerveld"
+                            billingOwnerEmail = "westerveldjp@gmail.com"
+                            onUpdateUserName?.invoke("Jurgen Paul Westerveld")
+                            onUpdateUserEmail?.invoke("westerveldjp@gmail.com")
+                        }
+                    ) {
+                        Text("Reset to 'Jurgen Paul Westerveld'", fontSize = 12.sp, color = OceanBlue)
                     }
                 }
             }
@@ -341,6 +413,40 @@ fun AccountSettingsScreen(
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
+                }
+
+                if (onNavigateToPayouts != null) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                    FilledTonalButton(
+                        onClick = onNavigateToPayouts,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = OceanBlue.copy(alpha = 0.12f),
+                            contentColor = OceanBlue
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("btn_settings_open_payouts")
+                    ) {
+                        Icon(
+                            Icons.Default.Payments,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Open Owner Payouts & Settlement Ledger",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
             }
         }
@@ -550,7 +656,11 @@ fun AccountSettingsScreen(
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Button(
-                onClick = { showSaveToast = true },
+                onClick = {
+                    onUpdateUserName?.invoke(billingOwnerName)
+                    onUpdateUserEmail?.invoke(billingOwnerEmail)
+                    showSaveToast = true
+                },
                 colors = ButtonDefaults.buttonColors(containerColor = OceanBlue),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
@@ -586,7 +696,7 @@ fun AccountSettingsScreen(
         AlertDialog(
             onDismissRequest = { showSaveToast = false },
             title = { Text("Settings Saved", fontWeight = FontWeight.Bold) },
-            text = { Text("Account and merchant organization preferences updated successfully.") },
+            text = { Text("Billing owner updated to '$billingOwnerName' ($billingOwnerEmail). Organization preferences saved successfully.") },
             confirmButton = {
                 Button(
                     onClick = { showSaveToast = false },

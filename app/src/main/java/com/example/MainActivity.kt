@@ -2,6 +2,7 @@ package com.example
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.Crossfade
@@ -19,11 +20,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Business
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,9 +40,12 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -65,11 +72,13 @@ import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
 import com.example.data.local.ClientEntity
 import com.example.ui.screens.AccountSettingsScreen
+import com.example.ui.screens.ClientDashboardScreen
 import com.example.ui.screens.ClientsScreen
 import com.example.ui.screens.CreateInvoiceSheet
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.InvoicesScreen
 import com.example.ui.screens.LoginScreen
+import com.example.ui.screens.OwnerPayoutScreen
 import com.example.ui.screens.SubscriptionsScreen
 import com.example.ui.theme.AccentGold
 import com.example.ui.theme.MyApplicationTheme
@@ -79,9 +88,10 @@ import com.example.ui.theme.StatusOverdue
 import com.example.ui.viewmodel.BillingViewModel
 
 enum class NavigationDestination(val title: String, val icon: ImageVector, val tag: String) {
-    DASHBOARD("Dashboard", Icons.Default.Dashboard, "nav_dashboard"),
+    DASHBOARD("Home", Icons.Default.Dashboard, "nav_dashboard"),
     INVOICES("Invoices", Icons.Default.Receipt, "nav_invoices"),
-    CLIENTS("Stores", Icons.Default.Business, "nav_clients"),
+    CLIENTS("Clients", Icons.Default.Business, "nav_clients"),
+    PAYOUTS("Payouts", Icons.Default.Payments, "nav_payouts"),
     SUBSCRIPTIONS("Retainers", Icons.Default.Autorenew, "nav_subscriptions"),
     SETTINGS("Settings", Icons.Default.Settings, "nav_settings")
 }
@@ -140,10 +150,19 @@ fun MainBillingApp(
     val invoiceFilter by viewModel.invoiceStatusFilter.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val userFeedbackMessage by viewModel.userFeedbackMessage.collectAsStateWithLifecycle()
+    val payouts by viewModel.allPayouts.collectAsStateWithLifecycle()
+    val payoutMetrics by viewModel.ownerPayoutMetrics.collectAsStateWithLifecycle()
+
+    if (currentDestination != NavigationDestination.DASHBOARD) {
+        BackHandler {
+            currentDestination = NavigationDestination.DASHBOARD
+        }
+    }
 
     // Create Invoice Sheet State triggered from Clients or Dashboard
     var clientForNewInvoice by remember { mutableStateOf<ClientEntity?>(null) }
     var showCreateInvoiceSheet by remember { mutableStateOf(false) }
+    var clientSubTab by remember { mutableStateOf(0) } // 0: Firestore Dashboard, 1: Local Ledger
 
     // Feedback Toast Snackbar
     LaunchedEffect(userFeedbackMessage) {
@@ -197,6 +216,18 @@ fun MainBillingApp(
                     }
                 },
                 actions = {
+                    // Owner Payouts Shortcut
+                    IconButton(
+                        onClick = { currentDestination = NavigationDestination.PAYOUTS },
+                        modifier = Modifier.testTag("action_owner_payouts")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Payments,
+                            contentDescription = "Owner Payouts",
+                            tint = if (currentDestination == NavigationDestination.PAYOUTS) OceanBlue else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
                     // Dark / Light Mode Toggle
                     IconButton(
                         onClick = { onToggleDarkTheme(!isDarkTheme) },
@@ -291,6 +322,8 @@ fun MainBillingApp(
                         onNavigateToInvoices = { currentDestination = NavigationDestination.INVOICES },
                         onNavigateToClients = { currentDestination = NavigationDestination.CLIENTS },
                         onNavigateToSubscriptions = { currentDestination = NavigationDestination.SUBSCRIPTIONS },
+                        onNavigateToPayouts = { currentDestination = NavigationDestination.PAYOUTS },
+                        ownerAvailableBalance = payoutMetrics.availableBalance,
                         onMarkAsPaid = { viewModel.markInvoiceAsPaid(it) },
                         onRecordPayment = { inv, amt, method, ref, notes ->
                             viewModel.recordInvoicePayment(inv, amt, method, ref, notes)
@@ -343,17 +376,100 @@ fun MainBillingApp(
                 }
 
                 NavigationDestination.CLIENTS -> {
-                    ClientsScreen(
-                        clients = clients,
-                        invoices = invoices,
-                        onSaveClient = { id, name, contact, email, phone, tax, address, country, currency, terms, notes ->
-                            viewModel.saveClient(id, name, contact, email, phone, tax, address, country, currency, terms, notes)
-                        },
-                        onDeleteClient = { viewModel.deleteClient(it) },
-                        onCreateInvoiceForClient = { client ->
-                            clientForNewInvoice = client
-                            showCreateInvoiceSheet = true
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        TabRow(
+                            selectedTabIndex = clientSubTab,
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            contentColor = OceanBlue
+                        ) {
+                            Tab(
+                                selected = clientSubTab == 0,
+                                onClick = { clientSubTab = 0 },
+                                text = { Text("Firestore Dashboard", fontWeight = FontWeight.SemiBold) },
+                                icon = { Icon(Icons.Default.Cloud, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                modifier = Modifier.testTag("tab_firestore_client_dashboard")
+                            )
+                            Tab(
+                                selected = clientSubTab == 1,
+                                onClick = { clientSubTab = 1 },
+                                text = { Text("Local Ledger", fontWeight = FontWeight.SemiBold) },
+                                icon = { Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                modifier = Modifier.testTag("tab_local_client_ledger")
+                            )
                         }
+
+                        if (clientSubTab == 0) {
+                            ClientDashboardScreen(
+                                userId = firebaseAuth.currentUser?.uid ?: "jurgen-westerveld",
+                                billingOwnerName = userName,
+                                firestoreSyncManager = firestoreSyncManager,
+                                localClients = clients,
+                                localInvoices = invoices,
+                                onCreateInvoiceForClient = { clientId, clientName ->
+                                    val entity = clients.find { it.id == clientId } ?: ClientEntity(
+                                        id = clientId,
+                                        name = clientName
+                                    )
+                                    clientForNewInvoice = entity
+                                    showCreateInvoiceSheet = true
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            ClientsScreen(
+                                clients = clients,
+                                invoices = invoices,
+                                onSaveClient = { id, name, contact, email, phone, tax, address, country, currency, terms, notes ->
+                                    viewModel.saveClient(id, name, contact, email, phone, tax, address, country, currency, terms, notes)
+                                },
+                                onDeleteClient = { viewModel.deleteClient(it) },
+                                onCreateInvoiceForClient = { client ->
+                                    clientForNewInvoice = client
+                                    showCreateInvoiceSheet = true
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                }
+
+                NavigationDestination.PAYOUTS -> {
+                    OwnerPayoutScreen(
+                        metrics = payoutMetrics,
+                        payouts = payouts,
+                        onRequestPayout = { amount, ownerId, ownerName, bank, iban, bic, speed, ref, notes ->
+                            viewModel.requestOwnerPayout(
+                                amount = amount,
+                                ownerId = ownerId,
+                                ownerName = ownerName,
+                                destinationBank = bank,
+                                destinationIban = iban,
+                                destinationBic = bic,
+                                speed = speed,
+                                reference = ref,
+                                notes = notes
+                            )
+                        },
+                        onCancelPayout = { viewModel.cancelPayout(it) },
+                        onDeletePayout = { viewModel.deletePayout(it) },
+                        onSyncPayouts = {
+                            coroutineScope.launch {
+                                val uid = firebaseAuth.currentUser?.uid ?: "jurgen-westerveld"
+                                syncStatusMessage = "Syncing owner payouts with Firestore..."
+                                val res = firestoreSyncManager.syncPayoutsToCloud(uid, payouts)
+                                res.onSuccess {
+                                    syncStatusMessage = "Synced $it payout records to Firestore!"
+                                    snackbarHostState.showSnackbar("Synced owner payouts to Cloud Firestore!")
+                                }.onFailure { e ->
+                                    syncStatusMessage = "Payout sync error: ${e.localizedMessage ?: "Network error"}"
+                                    snackbarHostState.showSnackbar("Payout sync failed: ${e.localizedMessage ?: "Error"}")
+                                }
+                            }
+                        },
+                        syncStatusMessage = syncStatusMessage,
+                        ownerName = userName,
+                        ownerEmail = userEmail,
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
 
@@ -373,20 +489,23 @@ fun MainBillingApp(
                     AccountSettingsScreen(
                         userEmail = userEmail,
                         userName = userName,
+                        onUpdateUserName = { userName = it },
+                        onUpdateUserEmail = { userEmail = it },
                         isDarkTheme = isDarkTheme,
                         onToggleDarkTheme = onToggleDarkTheme,
                         onLogout = {
                             firebaseAuth.signOut()
                             isLoggedIn = false
                         },
+                        onNavigateToPayouts = { currentDestination = NavigationDestination.PAYOUTS },
                         onSyncToCloud = {
                             coroutineScope.launch {
-                                val uid = firebaseAuth.currentUser?.uid ?: "local-owner"
+                                val uid = firebaseAuth.currentUser?.uid ?: "jurgen-westerveld"
                                 syncStatusMessage = "Syncing local records with Firestore..."
                                 val payments = viewModel.allPayments.value
-                                val result = firestoreSyncManager.syncAllToCloud(uid, clients, invoices, subscriptions, payments)
+                                val result = firestoreSyncManager.syncAllToCloud(uid, clients, invoices, subscriptions, payments, payouts)
                                 result.onSuccess {
-                                    syncStatusMessage = "Synced ${clients.size} stores, ${invoices.size} invoices & ${subscriptions.size} retainers to Firestore!"
+                                    syncStatusMessage = "Synced ${clients.size} stores, ${invoices.size} invoices, ${subscriptions.size} retainers & ${payouts.size} payouts to Firestore!"
                                     snackbarHostState.showSnackbar("Synced to Firestore successfully!")
                                 }.onFailure { e ->
                                     syncStatusMessage = "Sync error: ${e.localizedMessage ?: "Network error"}"

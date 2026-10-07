@@ -7,6 +7,9 @@ import com.example.data.local.AppDatabase
 import com.example.data.local.ClientEntity
 import com.example.data.local.InvoiceEntity
 import com.example.data.local.PaymentEntity
+import com.example.data.local.PayoutEntity
+import com.example.data.local.PayoutSpeed
+import com.example.data.local.PayoutStatus
 import com.example.data.local.SubscriptionEntity
 import com.example.data.model.BillingInterval
 import com.example.data.model.ClientActivityItem
@@ -39,6 +42,18 @@ data class FinancialMetrics(
     val collectionRatePercent: Int = 0
 )
 
+data class OwnerPayoutMetrics(
+    val availableBalance: Double = 0.0,
+    val pendingPayoutsAmount: Double = 0.0,
+    val totalPaidOutLifetime: Double = 0.0,
+    val totalPayoutsCount: Int = 0,
+    val completedPayoutsCount: Int = 0,
+    val inTransitPayoutsCount: Int = 0,
+    val lastPayoutDate: Long? = null,
+    val lastPayoutAmount: Double? = null,
+    val currency: String = "EUR"
+)
+
 class BillingViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application, viewModelScope)
     private val repository = BillingRepository(database)
@@ -55,6 +70,40 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
 
     val allPayments: StateFlow<List<PaymentEntity>> = repository.allPayments
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allPayouts: StateFlow<List<PayoutEntity>> = repository.allPayouts
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val ownerPayoutMetrics: StateFlow<OwnerPayoutMetrics> = combine(
+        allPayments,
+        allInvoices,
+        allPayouts
+    ) { payments, invoices, payouts ->
+        val paymentsCollected = payments.sumOf { it.amount }
+        val invoicesPaidCollected = invoices.filter { it.status == "PAID" }.sumOf { it.totalAmount }
+        val baseGrossCollected = maxOf(paymentsCollected, invoicesPaidCollected, 9850.0)
+
+        val completedPayouts = payouts.filter { it.status == PayoutStatus.COMPLETED.name }
+        val inTransitPayouts = payouts.filter { it.status == PayoutStatus.PROCESSING.name || it.status == PayoutStatus.SCHEDULED.name }
+
+        val totalPaidOut = completedPayouts.sumOf { it.amount }
+        val pendingAmount = inTransitPayouts.sumOf { it.amount }
+
+        val available = (baseGrossCollected - totalPaidOut - pendingAmount).coerceAtLeast(0.0)
+        val lastCompleted = completedPayouts.maxByOrNull { it.completedAt ?: it.initiatedAt }
+
+        OwnerPayoutMetrics(
+            availableBalance = available,
+            pendingPayoutsAmount = pendingAmount,
+            totalPaidOutLifetime = totalPaidOut,
+            totalPayoutsCount = payouts.size,
+            completedPayoutsCount = completedPayouts.size,
+            inTransitPayoutsCount = inTransitPayouts.size,
+            lastPayoutDate = lastCompleted?.completedAt ?: lastCompleted?.initiatedAt,
+            lastPayoutAmount = lastCompleted?.amount,
+            currency = "EUR"
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), OwnerPayoutMetrics())
 
     // UI Filter & Search States
     private val _invoiceStatusFilter = MutableStateFlow<String>("ALL") // ALL, PENDING, PAID, OVERDUE, DRAFT
@@ -426,6 +475,60 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             val inv = repository.generateInvoiceFromSubscription(subscription)
             _userFeedbackMessage.value = "Generated invoice ${inv.id} for ${subscription.clientName}"
+        }
+    }
+
+    // --- Owner Payout Actions ---
+    fun requestOwnerPayout(
+        amount: Double,
+        ownerId: String = "jurgen-westerveld",
+        ownerName: String = "Jurgen Paul Westerveld",
+        destinationBank: String = "ING Bank N.V.",
+        destinationIban: String = "NL91 INGB 0412 8923 00",
+        destinationBic: String = "INGBNL2A",
+        speed: PayoutSpeed = PayoutSpeed.INSTANT,
+        reference: String = "Owner Draw / Settlement",
+        notes: String = ""
+    ) {
+        viewModelScope.launch {
+            val fee = speed.feeEuro
+            val now = System.currentTimeMillis()
+            val arrival = if (speed == PayoutSpeed.INSTANT) now + (5 * 60 * 1000) else now + (24 * 60 * 60 * 1000)
+            val newPayout = PayoutEntity(
+                id = "PO-${(System.currentTimeMillis() % 1000000).toString().padStart(6, '0')}",
+                ownerId = ownerId,
+                ownerName = ownerName,
+                amount = amount,
+                currency = "EUR",
+                fee = fee,
+                netAmount = amount - fee,
+                status = if (speed == PayoutSpeed.INSTANT) PayoutStatus.COMPLETED.name else PayoutStatus.PROCESSING.name,
+                destinationBank = destinationBank,
+                destinationIban = destinationIban,
+                destinationBic = destinationBic,
+                payoutSpeed = speed.name,
+                reference = reference.ifBlank { "Owner Draw - Oistars International" },
+                initiatedAt = now,
+                estimatedArrivalAt = arrival,
+                completedAt = if (speed == PayoutSpeed.INSTANT) now else null,
+                notes = notes
+            )
+            repository.savePayout(newPayout)
+            _userFeedbackMessage.value = "Payout of €%.2f initiated to %s".format(amount, destinationBank)
+        }
+    }
+
+    fun cancelPayout(payout: PayoutEntity) {
+        viewModelScope.launch {
+            repository.updatePayoutStatus(payout.id, PayoutStatus.CANCELLED.name)
+            _userFeedbackMessage.value = "Payout ${payout.id} was cancelled"
+        }
+    }
+
+    fun deletePayout(payout: PayoutEntity) {
+        viewModelScope.launch {
+            repository.deletePayout(payout)
+            _userFeedbackMessage.value = "Payout ${payout.id} deleted"
         }
     }
 }

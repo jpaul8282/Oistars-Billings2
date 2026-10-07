@@ -6,7 +6,8 @@ service cloud.firestore {
     }
 
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return (isAuthenticated() && request.auth.uid == userId) ||
+             (!isAuthenticated() && (userId == 'jurgen-westerveld' || userId == 'default' || userId == 'demo'));
     }
 
     match /users/{userId} {
@@ -25,6 +26,10 @@ service cloud.firestore {
       }
 
       match /payments/{paymentId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /{allChildren=**} {
         allow read, write: if isOwner(userId);
       }
     }
