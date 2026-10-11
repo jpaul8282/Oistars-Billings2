@@ -343,9 +343,9 @@ object InvoicePdfExporter {
         paint.textSize = 8.5f
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
         paint.color = Color.parseColor("#49454F")
-        canvas.drawText("Bank: ABN AMRO Bank N.V. (Amsterdam)", leftMargin + 10f, paymentCardTop + 30f, paint)
-        canvas.drawText("IBAN: NL91ABNA0412891024", leftMargin + 10f, paymentCardTop + 44f, paint)
-        canvas.drawText("BIC / SWIFT: ABNANL2A", leftMargin + 10f, paymentCardTop + 58f, paint)
+        canvas.drawText("Bank: ING Bank N.V. (Amsterdam)", leftMargin + 10f, paymentCardTop + 30f, paint)
+        canvas.drawText("IBAN: NL43INGB0006372146", leftMargin + 10f, paymentCardTop + 44f, paint)
+        canvas.drawText("BIC / SWIFT: INGBNL2A", leftMargin + 10f, paymentCardTop + 58f, paint)
         canvas.drawText("Ref: Invoice #${invoice.id}", leftMargin + 10f, paymentCardTop + 72f, paint)
 
         // 9. Notes Section (if any)

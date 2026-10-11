@@ -136,7 +136,7 @@ data class PayoutEntity(
     val netAmount: Double = amount - fee,
     val status: String = PayoutStatus.COMPLETED.name,
     val destinationBank: String = "ING Bank N.V.",
-    val destinationIban: String = "NL91 INGB 0412 8923 00",
+    val destinationIban: String = "NL43 INGB 0006 3721 46",
     val destinationBic: String = "INGBNL2A",
     val payoutSpeed: String = PayoutSpeed.INSTANT.name,
     val reference: String = "Owner Draw / Profit Distribution",

@@ -532,8 +532,8 @@ private fun shareInvoiceSummary(context: Context, invoice: InvoiceEntity) {
         
         Payment Details:
         Oistars Webshop Brands Inc. (Amsterdam)
-        IBAN: NL91ABNA0412891024
-        BIC: ABNANL2A
+        IBAN: NL43INGB0006372146
+        BIC: INGBNL2A
     """.trimIndent()
 
     val sendIntent = Intent(Intent.ACTION_SEND).apply {

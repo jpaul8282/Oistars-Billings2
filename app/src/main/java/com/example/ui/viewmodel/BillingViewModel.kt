@@ -484,7 +484,7 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
         ownerId: String = "jurgen-westerveld",
         ownerName: String = "Jurgen Paul Westerveld",
         destinationBank: String = "ING Bank N.V.",
-        destinationIban: String = "NL91 INGB 0412 8923 00",
+        destinationIban: String = "NL43 INGB 0006 3721 46",
         destinationBic: String = "INGBNL2A",
         speed: PayoutSpeed = PayoutSpeed.INSTANT,
         reference: String = "Owner Draw / Settlement",

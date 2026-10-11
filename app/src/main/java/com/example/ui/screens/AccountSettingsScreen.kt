@@ -106,7 +106,7 @@ fun AccountSettingsScreen(
     var selectedCurrency by remember { mutableStateOf("EUR (€)") }
     var defaultTermsDays by remember { mutableStateOf("14") }
     var bankName by remember { mutableStateOf("ING Bank N.V.") }
-    var ibanNumber by remember { mutableStateOf("NL91 INGB 0412 8923 00") }
+    var ibanNumber by remember { mutableStateOf("NL43 INGB 0006 3721 46") }
     var bicCode by remember { mutableStateOf("INGBNL2A") }
     var defaultVatRate by remember { mutableStateOf("21.0") }
     var autoEmailReceipts by remember { mutableStateOf(true) }

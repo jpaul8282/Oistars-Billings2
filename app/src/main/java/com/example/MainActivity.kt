@@ -74,6 +74,8 @@ import com.example.data.local.ClientEntity
 import com.example.ui.screens.AccountSettingsScreen
 import com.example.ui.screens.ClientDashboardScreen
 import com.example.ui.screens.ClientsScreen
+import com.example.ui.screens.FirestoreClientsScreen
+import com.example.ui.screens.ClientDetailModal
 import com.example.ui.screens.CreateInvoiceSheet
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.InvoicesScreen
@@ -162,7 +164,8 @@ fun MainBillingApp(
     // Create Invoice Sheet State triggered from Clients or Dashboard
     var clientForNewInvoice by remember { mutableStateOf<ClientEntity?>(null) }
     var showCreateInvoiceSheet by remember { mutableStateOf(false) }
-    var clientSubTab by remember { mutableStateOf(0) } // 0: Firestore Dashboard, 1: Local Ledger
+    var selectedClientForDetail by remember { mutableStateOf<ClientEntity?>(null) }
+    var clientSubTab by remember { mutableStateOf(0) } // 0: Firestore Clients, 1: Cloud Metrics, 2: Local Ledger
 
     // Feedback Toast Snackbar
     LaunchedEffect(userFeedbackMessage) {
@@ -385,50 +388,80 @@ fun MainBillingApp(
                             Tab(
                                 selected = clientSubTab == 0,
                                 onClick = { clientSubTab = 0 },
-                                text = { Text("Firestore Dashboard", fontWeight = FontWeight.SemiBold) },
+                                text = { Text("Firestore Clients", fontWeight = FontWeight.SemiBold) },
                                 icon = { Icon(Icons.Default.Cloud, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                                modifier = Modifier.testTag("tab_firestore_client_dashboard")
+                                modifier = Modifier.testTag("tab_firestore_clients_list")
                             )
                             Tab(
                                 selected = clientSubTab == 1,
                                 onClick = { clientSubTab = 1 },
+                                text = { Text("Cloud Metrics", fontWeight = FontWeight.SemiBold) },
+                                icon = { Icon(Icons.Default.Business, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                modifier = Modifier.testTag("tab_firestore_client_dashboard")
+                            )
+                            Tab(
+                                selected = clientSubTab == 2,
+                                onClick = { clientSubTab = 2 },
                                 text = { Text("Local Ledger", fontWeight = FontWeight.SemiBold) },
                                 icon = { Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(18.dp)) },
                                 modifier = Modifier.testTag("tab_local_client_ledger")
                             )
                         }
 
-                        if (clientSubTab == 0) {
-                            ClientDashboardScreen(
-                                userId = firebaseAuth.currentUser?.uid ?: "jurgen-westerveld",
-                                billingOwnerName = userName,
-                                firestoreSyncManager = firestoreSyncManager,
-                                localClients = clients,
-                                localInvoices = invoices,
-                                onCreateInvoiceForClient = { clientId, clientName ->
-                                    val entity = clients.find { it.id == clientId } ?: ClientEntity(
-                                        id = clientId,
-                                        name = clientName
-                                    )
-                                    clientForNewInvoice = entity
-                                    showCreateInvoiceSheet = true
-                                },
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        } else {
-                            ClientsScreen(
-                                clients = clients,
-                                invoices = invoices,
-                                onSaveClient = { id, name, contact, email, phone, tax, address, country, currency, terms, notes ->
-                                    viewModel.saveClient(id, name, contact, email, phone, tax, address, country, currency, terms, notes)
-                                },
-                                onDeleteClient = { viewModel.deleteClient(it) },
-                                onCreateInvoiceForClient = { client ->
-                                    clientForNewInvoice = client
-                                    showCreateInvoiceSheet = true
-                                },
-                                modifier = Modifier.fillMaxSize()
-                            )
+                        when (clientSubTab) {
+                            0 -> {
+                                FirestoreClientsScreen(
+                                    userId = firebaseAuth.currentUser?.uid ?: "jurgen-westerveld",
+                                    firestoreSyncManager = firestoreSyncManager,
+                                    fallbackClients = clients,
+                                    fallbackInvoices = invoices,
+                                    onClientSelected = { firestoreClient ->
+                                        selectedClientForDetail = firestoreClient.toLocalEntity()
+                                    },
+                                    onCreateInvoiceForClient = { clientId, clientName ->
+                                        val entity = clients.find { it.id == clientId } ?: ClientEntity(
+                                            id = clientId,
+                                            name = clientName
+                                        )
+                                        clientForNewInvoice = entity
+                                        showCreateInvoiceSheet = true
+                                    },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                            1 -> {
+                                ClientDashboardScreen(
+                                    userId = firebaseAuth.currentUser?.uid ?: "jurgen-westerveld",
+                                    billingOwnerName = userName,
+                                    firestoreSyncManager = firestoreSyncManager,
+                                    localClients = clients,
+                                    localInvoices = invoices,
+                                    onCreateInvoiceForClient = { clientId, clientName ->
+                                        val entity = clients.find { it.id == clientId } ?: ClientEntity(
+                                            id = clientId,
+                                            name = clientName
+                                        )
+                                        clientForNewInvoice = entity
+                                        showCreateInvoiceSheet = true
+                                    },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                            else -> {
+                                ClientsScreen(
+                                    clients = clients,
+                                    invoices = invoices,
+                                    onSaveClient = { id, name, contact, email, phone, tax, address, country, currency, terms, notes ->
+                                        viewModel.saveClient(id, name, contact, email, phone, tax, address, country, currency, terms, notes)
+                                    },
+                                    onDeleteClient = { viewModel.deleteClient(it) },
+                                    onCreateInvoiceForClient = { client ->
+                                        clientForNewInvoice = client
+                                        showCreateInvoiceSheet = true
+                                    },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
                         }
                     }
                 }
@@ -543,6 +576,27 @@ fun MainBillingApp(
                 )
                 showCreateInvoiceSheet = false
                 clientForNewInvoice = null
+            }
+        )
+    }
+
+    // Modal detailed view triggered when a client is selected from Firestore or dashboard
+    selectedClientForDetail?.let { client ->
+        ClientDetailModal(
+            client = client,
+            invoices = invoices,
+            subscriptions = subscriptions,
+            onDismiss = { selectedClientForDetail = null },
+            onCreateInvoiceForClient = { cl ->
+                selectedClientForDetail = null
+                clientForNewInvoice = cl
+                showCreateInvoiceSheet = true
+            },
+            onMarkInvoiceAsPaid = { inv ->
+                viewModel.markInvoiceAsPaid(inv)
+            },
+            onBillSubscriptionNow = { sub ->
+                viewModel.generateInvoiceFromSubscription(sub)
             }
         )
     }

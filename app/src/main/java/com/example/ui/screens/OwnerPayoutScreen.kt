@@ -271,7 +271,7 @@ fun OwnerPayoutScreen(
                                     }
                                 }
                                 Text(
-                                    text = "NL91 INGB 0412 8923 00 • BIC: INGBNL2A",
+                                    text = "NL43 INGB 0006 3721 46 • BIC: INGBNL2A",
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -279,7 +279,7 @@ fun OwnerPayoutScreen(
 
                             IconButton(
                                 onClick = {
-                                    clipboardManager.setText(AnnotatedString("NL91 INGB 0412 8923 00"))
+                                    clipboardManager.setText(AnnotatedString("NL43 INGB 0006 3721 46"))
                                     Toast.makeText(context, "IBAN copied to clipboard", Toast.LENGTH_SHORT).show()
                                 },
                                 modifier = Modifier.size(36.dp)
@@ -727,7 +727,7 @@ fun OwnerPayoutScreen(
             currency = metrics.currency,
             beneficiaryName = ownerName,
             beneficiaryBank = "ING Bank N.V.",
-            beneficiaryIban = "NL91 INGB 0412 8923 00",
+            beneficiaryIban = "NL43 INGB 0006 3721 46",
             beneficiaryBic = "INGBNL2A",
             onDismiss = { showRequestDialog = false },
             onConfirm = { amount, speed, reference, notes ->
@@ -736,7 +736,7 @@ fun OwnerPayoutScreen(
                     "jurgen-westerveld",
                     ownerName,
                     "ING Bank N.V.",
-                    "NL91 INGB 0412 8923 00",
+                    "NL43 INGB 0006 3721 46",
                     "INGBNL2A",
                     speed,
                     reference,
