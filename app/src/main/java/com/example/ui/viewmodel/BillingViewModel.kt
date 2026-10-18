@@ -486,14 +486,19 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
         destinationBank: String = "ING Bank N.V.",
         destinationIban: String = "NL43 INGB 0006 3721 46",
         destinationBic: String = "INGBNL2A",
-        speed: PayoutSpeed = PayoutSpeed.INSTANT,
+        speed: PayoutSpeed = PayoutSpeed.WERO_INSTANT,
         reference: String = "Owner Draw / Settlement",
         notes: String = ""
     ) {
         viewModelScope.launch {
             val fee = speed.feeEuro
             val now = System.currentTimeMillis()
-            val arrival = if (speed == PayoutSpeed.INSTANT) now + (5 * 60 * 1000) else now + (24 * 60 * 60 * 1000)
+            val isImmediate = speed == PayoutSpeed.WERO_INSTANT || speed == PayoutSpeed.INSTANT
+            val arrival = when (speed) {
+                PayoutSpeed.WERO_INSTANT -> now + 4000L // 4 seconds via EPI
+                PayoutSpeed.INSTANT -> now + (5 * 60 * 1000L) // 5 minutes SEPA
+                PayoutSpeed.STANDARD -> now + (24 * 60 * 60 * 1000L) // 1 day
+            }
             val newPayout = PayoutEntity(
                 id = "PO-${(System.currentTimeMillis() % 1000000).toString().padStart(6, '0')}",
                 ownerId = ownerId,
@@ -502,19 +507,27 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
                 currency = "EUR",
                 fee = fee,
                 netAmount = amount - fee,
-                status = if (speed == PayoutSpeed.INSTANT) PayoutStatus.COMPLETED.name else PayoutStatus.PROCESSING.name,
+                status = if (isImmediate) PayoutStatus.COMPLETED.name else PayoutStatus.PROCESSING.name,
                 destinationBank = destinationBank,
                 destinationIban = destinationIban,
                 destinationBic = destinationBic,
                 payoutSpeed = speed.name,
-                reference = reference.ifBlank { "Owner Draw - Oistars International" },
+                reference = reference.ifBlank {
+                    if (speed == PayoutSpeed.WERO_INSTANT) "Wero Instant Wire - Oistars Draw" else "Owner Draw - Oistars International"
+                },
                 initiatedAt = now,
                 estimatedArrivalAt = arrival,
-                completedAt = if (speed == PayoutSpeed.INSTANT) now else null,
-                notes = notes
+                completedAt = if (isImmediate) now else null,
+                notes = notes.ifBlank {
+                    if (speed == PayoutSpeed.WERO_INSTANT) "Settled in real-time (< 5s) via Wero (European Payments Initiative) to ING NL43INGB0006372146" else ""
+                }
             )
             repository.savePayout(newPayout)
-            _userFeedbackMessage.value = "Payout of €%.2f initiated to %s".format(amount, destinationBank)
+            _userFeedbackMessage.value = if (speed == PayoutSpeed.WERO_INSTANT) {
+                "Wero Instant wire of €%.2f settled immediately to ING IBAN %s".format(amount, destinationIban)
+            } else {
+                "Payout of €%.2f initiated to %s".format(amount, destinationBank)
+            }
         }
     }
 

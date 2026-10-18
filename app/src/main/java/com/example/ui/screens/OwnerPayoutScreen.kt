@@ -252,11 +252,24 @@ fun OwnerPayoutScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = "ING Bank N.V. • SEPA Instant",
+                                        text = "ING Bank N.V. • Wero & SEPA",
                                         fontWeight = FontWeight.SemiBold,
                                         fontSize = 12.sp
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        color = OceanBlue.copy(alpha = 0.15f),
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "Wero Instant",
+                                            color = OceanBlue,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(4.dp))
                                     Surface(
                                         color = StatusPaid.copy(alpha = 0.15f),
                                         shape = RoundedCornerShape(4.dp)
@@ -275,12 +288,17 @@ fun OwnerPayoutScreen(
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                                Text(
+                                    text = "EPI / Wero Identifier: westerveldjp@gmail.com",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                                )
                             }
 
                             IconButton(
                                 onClick = {
-                                    clipboardManager.setText(AnnotatedString("NL43 INGB 0006 3721 46"))
-                                    Toast.makeText(context, "IBAN copied to clipboard", Toast.LENGTH_SHORT).show()
+                                    clipboardManager.setText(AnnotatedString("NL43INGB0006372146"))
+                                    Toast.makeText(context, "IBAN NL43INGB0006372146 copied to clipboard", Toast.LENGTH_SHORT).show()
                                 },
                                 modifier = Modifier.size(36.dp)
                             ) {
@@ -808,10 +826,11 @@ fun PayoutListItemCard(
                 modifier = Modifier.size(42.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
+                    val isFast = payout.payoutSpeed == PayoutSpeed.WERO_INSTANT.name || payout.payoutSpeed == PayoutSpeed.INSTANT.name
                     Icon(
-                        imageVector = if (payout.payoutSpeed == PayoutSpeed.INSTANT.name) Icons.Default.Bolt else Icons.Default.AccountBalance,
+                        imageVector = if (isFast) Icons.Default.Bolt else Icons.Default.AccountBalance,
                         contentDescription = null,
-                        tint = statusColor,
+                        tint = if (payout.payoutSpeed == PayoutSpeed.WERO_INSTANT.name) AccentGold else statusColor,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -826,8 +845,24 @@ fun PayoutListItemCard(
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
+                    if (payout.payoutSpeed == PayoutSpeed.WERO_INSTANT.name) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            color = OceanBlue.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = "WERO",
+                                color = OceanBlue,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(2.dp))
@@ -887,7 +922,7 @@ fun RequestPayoutDialog(
     onConfirm: (amount: Double, speed: PayoutSpeed, reference: String, notes: String) -> Unit
 ) {
     var amountInput by remember { mutableStateOf(if (availableBalance > 0) "%.2f".format(availableBalance) else "500.00") }
-    var selectedSpeed by remember { mutableStateOf(PayoutSpeed.INSTANT) }
+    var selectedSpeed by remember { mutableStateOf(PayoutSpeed.WERO_INSTANT) }
     var referenceText by remember { mutableStateOf("Owner Draw - Oistars International") }
     var notesText by remember { mutableStateOf("") }
 
@@ -914,7 +949,7 @@ fun RequestPayoutDialog(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text("Request Owner Payout", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Text("Instant SEPA Direct Settlement", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("European Bankwire via Wero (EPI) & SEPA", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         },
@@ -994,13 +1029,55 @@ fun RequestPayoutDialog(
 
                 // Speed Selector Cards
                 Text("Settlement Method", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                Row(
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    // Wero Instant Option
                     Card(
                         modifier = Modifier
-                            .weight(1f)
+                            .fillMaxWidth()
+                            .clickable { selectedSpeed = PayoutSpeed.WERO_INSTANT },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (selectedSpeed == PayoutSpeed.WERO_INSTANT) OceanBlue.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        ),
+                        border = if (selectedSpeed == PayoutSpeed.WERO_INSTANT) ButtonDefaults.outlinedButtonBorder.copy(
+                            brush = androidx.compose.ui.graphics.SolidColor(OceanBlue)
+                        ) else null
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Bolt, contentDescription = null, tint = AccentGold, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("Wero Instant Wire (EPI)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            color = AccentGold.copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text("RECOMMENDED", color = AccentGold, fontSize = 8.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                        }
+                                    }
+                                    Text("Real-time (< 5s) direct to ING bank account", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Text("€0.00", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = StatusPaid)
+                        }
+                    }
+
+                    // SEPA Instant Option
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
                             .clickable { selectedSpeed = PayoutSpeed.INSTANT },
                         shape = RoundedCornerShape(10.dp),
                         colors = CardDefaults.cardColors(
@@ -1010,20 +1087,29 @@ fun RequestPayoutDialog(
                             brush = androidx.compose.ui.graphics.SolidColor(OceanBlue)
                         ) else null
                     ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Bolt, contentDescription = null, tint = AccentGold, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Instant SEPA", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Icon(Icons.Default.Bolt, contentDescription = null, tint = OceanBlue, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text("Instant SEPA (SCT Inst)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Text("Settlement within minutes", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                             }
-                            Text("Within seconds", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("Fee: €0.00", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = StatusPaid)
+                            Text("€0.00", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = StatusPaid)
                         }
                     }
 
+                    // Standard SEPA Option
                     Card(
                         modifier = Modifier
-                            .weight(1f)
+                            .fillMaxWidth()
                             .clickable { selectedSpeed = PayoutSpeed.STANDARD },
                         shape = RoundedCornerShape(10.dp),
                         colors = CardDefaults.cardColors(
@@ -1033,14 +1119,22 @@ fun RequestPayoutDialog(
                             brush = androidx.compose.ui.graphics.SolidColor(OceanBlue)
                         ) else null
                     ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Schedule, contentDescription = null, tint = OceanBlue, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Standard SEPA", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Icon(Icons.Default.Schedule, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text("Standard SEPA Bankwire", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Text("1-2 business days clearing", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                             }
-                            Text("1-2 business days", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("Fee: €0.00", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = StatusPaid)
+                            Text("€0.00", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = StatusPaid)
                         }
                     }
                 }
@@ -1060,6 +1154,11 @@ fun RequestPayoutDialog(
                             text = "$beneficiaryIban • $beneficiaryName",
                             fontSize = 10.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "BIC: $beneficiaryBic • Wero / EPI Active",
+                            fontSize = 9.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
                         )
                     }
                 }
@@ -1082,7 +1181,11 @@ fun RequestPayoutDialog(
                 colors = ButtonDefaults.buttonColors(containerColor = OceanBlue),
                 modifier = Modifier.testTag("confirm_payout_button")
             ) {
-                Text("Confirm Transfer", color = Color.White, fontWeight = FontWeight.Bold)
+                Text(
+                    text = if (selectedSpeed == PayoutSpeed.WERO_INSTANT) "Transfer via Wero" else "Confirm Transfer",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
             }
         },
         dismissButton = {
@@ -1232,7 +1335,7 @@ fun PayoutDetailDialog(
                 Button(
                     onClick = {
                         clipboardManager.setText(
-                            AnnotatedString("Payout ID: ${payout.id}\nAmount: €${payout.amount}\nIBAN: ${payout.destinationIban}\nRef: ${payout.reference}")
+                            AnnotatedString("Payout ID: ${payout.id}\nAmount: €${payout.amount}\nBeneficiary: ${payout.ownerName}\nBank: ${payout.destinationBank}\nIBAN: NL43INGB0006372146\nMethod: ${payout.speed.label}\nRef: ${payout.reference}")
                         )
                         Toast.makeText(context, "Receipt copied to clipboard", Toast.LENGTH_SHORT).show()
                         onDismiss()

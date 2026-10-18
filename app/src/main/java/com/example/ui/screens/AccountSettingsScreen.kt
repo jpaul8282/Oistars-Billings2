@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Email
@@ -413,6 +414,33 @@ fun AccountSettingsScreen(
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
+                }
+
+                Surface(
+                    color = OceanBlue.copy(alpha = 0.08f),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Bolt, contentDescription = null, tint = AccentGold, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "Wero Instant Wire (EPI) Active",
+                                fontSize = 11.sp,
+                                color = OceanBlue,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Direct European account-to-account settlement to ING NL43INGB0006372146",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
 
                 if (onNavigateToPayouts != null) {

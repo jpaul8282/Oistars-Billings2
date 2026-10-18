@@ -114,12 +114,13 @@ enum class PayoutStatus(val label: String) {
 }
 
 enum class PayoutSpeed(val label: String, val feeEuro: Double, val etaDescription: String) {
+    WERO_INSTANT("Wero Instant Wire", 0.0, "Real-time (< 5s) via European Payments Initiative"),
     INSTANT("Instant SEPA", 0.0, "Within minutes"),
     STANDARD("Standard SEPA", 0.0, "1-2 business days");
 
     companion object {
         fun fromString(value: String): PayoutSpeed {
-            return entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: INSTANT
+            return entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: WERO_INSTANT
         }
     }
 }
@@ -138,7 +139,7 @@ data class PayoutEntity(
     val destinationBank: String = "ING Bank N.V.",
     val destinationIban: String = "NL43 INGB 0006 3721 46",
     val destinationBic: String = "INGBNL2A",
-    val payoutSpeed: String = PayoutSpeed.INSTANT.name,
+    val payoutSpeed: String = PayoutSpeed.WERO_INSTANT.name,
     val reference: String = "Owner Draw / Profit Distribution",
     val initiatedAt: Long = System.currentTimeMillis(),
     val estimatedArrivalAt: Long = System.currentTimeMillis(),
