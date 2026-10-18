@@ -4,7 +4,8 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/oistars/billings/badge)](https://securityscorecards.dev/)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/jpaul8282/Oistars-Billings2)
 [![Security Policy](https://img.shields.io/badge/security-OpenSSF%20Compliant-blue.svg)](SECURITY.md)
-[![ProGuard / R8](https://img.shields.io/badge/R8%2FProGuard-Optimized-success.svg)](PROGUARD_GUIDE.md)
+[![User Manual](https://img.shields.io/badge/Documentation-User%20Manual-informational.svg)](USER_MANUAL.md)
+[![ProGuard Security](https://img.shields.io/badge/Security-ProGuard%20Hardened-red.svg)](PROGUARD_SECURITY.md)
 [![Beneficiary IBAN](https://img.shields.io/badge/ING%20IBAN-NL43INGB0006372146-orange.svg)](#-bankwire--wero-instant-payout-system)
 [![Payment Network](https://img.shields.io/badge/Instant%20Wire-Wero%20%7C%20EPI%20%7C%20SEPA-blueviolet.svg)](#-wero-european-payments-initiative-integration)
 
@@ -13,6 +14,17 @@
 > **Billing Owner & Merchant Lead**: Jurgen Paul Westerveld (`westerveldjp@gmail.com`)
 
 ![Oistars Billings](./assets/billing_dashboard_hero.jpg)
+
+---
+
+## 📸 Google Play Store Showcase Screenshots
+
+| 1. Financial Dashboard | 2. Invoice Lifecycle | 3. Instant Payouts & Wero | 4. Client Store Ledger | 5. Recurring Retainers |
+|:---:|:---:|:---:|:---:|:---:|
+| ![Dashboard](app/src/main/res/drawable/img_store_dashboard_1792326378715.jpg) | ![Invoices](app/src/main/res/drawable/img_store_invoices_1792326393162.jpg) | ![Payouts](app/src/main/res/drawable/img_store_payouts_1792326407777.jpg) | ![Clients](app/src/main/res/drawable/img_store_clients_1792326420777.jpg) | ![Retainers](app/src/main/res/drawable/img_store_retainers_1792326435252.jpg) |
+| *Real-Time Revenue Analytics* | *Itemized Billing & PDF Export* | *Wero & SEPA Instant Clearing* | *Firestore Cloud Sync* | *Subscription Management* |
+
+*For complete step-by-step instructions and store reviewer documentation, refer to the [Official User Manual](USER_MANUAL.md).*
 
 ---
 
