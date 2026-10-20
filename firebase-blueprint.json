@@ -102,6 +102,50 @@
         "notes": { "type": "string" }
       },
       "required": ["id", "userId", "invoiceId", "amount"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Store catalog product or service item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "stockQuantity": { "type": "integer" },
+        "description": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "category": { "type": "string" }
+      },
+      "required": ["id", "name", "price"]
+    },
+    "Cart": {
+      "title": "Cart",
+      "description": "User shopping cart containing cart items",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "updatedAt": { "type": "integer" },
+        "items": { "type": "array" }
+      },
+      "required": ["userId"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer order with order items and linked invoice",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "totalAmount": { "type": "number" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "integer" },
+        "items": { "type": "array" },
+        "invoiceId": { "type": "string" },
+        "shippingAddress": { "type": "string" },
+        "customerEmail": { "type": "string" },
+        "customerName": { "type": "string" }
+      },
+      "required": ["id", "userId", "totalAmount", "status"]
     }
   },
   "firestore": {
@@ -124,6 +168,18 @@
     "/users/{userId}/payments/{paymentId}": {
       "schema": "Payment",
       "description": "Payments belonging to user"
+    },
+    "/users/{userId}/cart/{cartId}": {
+      "schema": "Cart",
+      "description": "Active shopping cart belonging to user"
+    },
+    "/users/{userId}/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Completed and in-flight orders belonging to user"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Store products catalog"
     }
   }
 }

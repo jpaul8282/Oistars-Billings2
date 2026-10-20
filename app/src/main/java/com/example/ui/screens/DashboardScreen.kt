@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -97,6 +98,7 @@ fun DashboardScreen(
     onNavigateToClients: () -> Unit,
     onNavigateToSubscriptions: () -> Unit,
     onNavigateToPayouts: (() -> Unit)? = null,
+    onNavigateToStore: (() -> Unit)? = null,
     ownerAvailableBalance: Double = 0.0,
     onMarkAsPaid: (InvoiceEntity) -> Unit,
     onRecordPayment: (InvoiceEntity, Double, String, String, String) -> Unit,
@@ -616,6 +618,18 @@ fun DashboardScreen(
                     Icon(Icons.Default.Autorenew, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Retainers", fontSize = 12.sp)
+                }
+
+                if (onNavigateToStore != null) {
+                    FilledTonalButton(
+                        onClick = onNavigateToStore,
+                        modifier = Modifier.weight(1f).testTag("dashboard_btn_open_store"),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.Storefront, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Store", fontSize = 12.sp)
+                    }
                 }
             }
 

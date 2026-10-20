@@ -29,9 +29,22 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
       }
 
+      match /cart/{cartDoc} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /orders/{orderId} {
+        allow read, write: if isOwner(userId);
+      }
+
       match /{allChildren=**} {
         allow read, write: if isOwner(userId);
       }
+    }
+
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAuthenticated() || isOwner('jurgen-westerveld');
     }
   }
 }

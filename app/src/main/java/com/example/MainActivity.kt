@@ -81,6 +81,7 @@ import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.InvoicesScreen
 import com.example.ui.screens.LoginScreen
 import com.example.ui.screens.OwnerPayoutScreen
+import com.example.ui.screens.StoreCatalogScreen
 import com.example.ui.screens.SubscriptionsScreen
 import com.example.ui.theme.AccentGold
 import com.example.ui.theme.MyApplicationTheme
@@ -88,10 +89,12 @@ import com.example.ui.theme.NavyDark
 import com.example.ui.theme.OceanBlue
 import com.example.ui.theme.StatusOverdue
 import com.example.ui.viewmodel.BillingViewModel
+import androidx.compose.material.icons.filled.Storefront
 
 enum class NavigationDestination(val title: String, val icon: ImageVector, val tag: String) {
     DASHBOARD("Home", Icons.Default.Dashboard, "nav_dashboard"),
     INVOICES("Invoices", Icons.Default.Receipt, "nav_invoices"),
+    STORE("Store", Icons.Default.Storefront, "nav_store"),
     CLIENTS("Clients", Icons.Default.Business, "nav_clients"),
     PAYOUTS("Payouts", Icons.Default.Payments, "nav_payouts"),
     SUBSCRIPTIONS("Retainers", Icons.Default.Autorenew, "nav_subscriptions"),
@@ -154,6 +157,9 @@ fun MainBillingApp(
     val userFeedbackMessage by viewModel.userFeedbackMessage.collectAsStateWithLifecycle()
     val payouts by viewModel.allPayouts.collectAsStateWithLifecycle()
     val payoutMetrics by viewModel.ownerPayoutMetrics.collectAsStateWithLifecycle()
+    val products by viewModel.allProducts.collectAsStateWithLifecycle()
+    val cart by viewModel.userCart.collectAsStateWithLifecycle()
+    val orders by viewModel.userOrders.collectAsStateWithLifecycle()
 
     if (currentDestination != NavigationDestination.DASHBOARD) {
         BackHandler {
@@ -288,6 +294,14 @@ fun MainBillingApp(
                                 }) {
                                     Icon(destination.icon, contentDescription = destination.title)
                                 }
+                            } else if (destination == NavigationDestination.STORE && cart.itemCount > 0) {
+                                BadgedBox(badge = {
+                                    Badge(containerColor = OceanBlue) {
+                                        Text("${cart.itemCount}", fontSize = 10.sp, color = Color.White)
+                                    }
+                                }) {
+                                    Icon(destination.icon, contentDescription = destination.title)
+                                }
                             } else {
                                 Icon(destination.icon, contentDescription = destination.title)
                             }
@@ -326,6 +340,7 @@ fun MainBillingApp(
                         onNavigateToClients = { currentDestination = NavigationDestination.CLIENTS },
                         onNavigateToSubscriptions = { currentDestination = NavigationDestination.SUBSCRIPTIONS },
                         onNavigateToPayouts = { currentDestination = NavigationDestination.PAYOUTS },
+                        onNavigateToStore = { currentDestination = NavigationDestination.STORE },
                         ownerAvailableBalance = payoutMetrics.availableBalance,
                         onMarkAsPaid = { viewModel.markInvoiceAsPaid(it) },
                         onRecordPayment = { inv, amt, method, ref, notes ->
@@ -375,6 +390,20 @@ fun MainBillingApp(
                                 currency = currency
                             )
                         }
+                    )
+                }
+
+                NavigationDestination.STORE -> {
+                    StoreCatalogScreen(
+                        products = products,
+                        cart = cart,
+                        orders = orders,
+                        onAddToCart = { viewModel.addToCart(it) },
+                        onUpdateQuantity = { pid, qty -> viewModel.updateCartItemQuantity(pid, qty) },
+                        onRemoveFromCart = { viewModel.removeFromCart(it) },
+                        onClearCart = { viewModel.clearCart() },
+                        onCheckout = { name, email, addr -> viewModel.checkoutOrder(name, email, addr) },
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
 

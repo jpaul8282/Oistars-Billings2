@@ -17,7 +17,13 @@ import com.example.data.model.ClientActivityType
 import com.example.data.model.InvoiceItem
 import com.example.data.model.InvoiceItemSerializer
 import com.example.data.model.InvoiceStatus
+import com.example.data.model.Cart
+import com.example.data.model.CartItem
+import com.example.data.model.Order
+import com.example.data.model.OrderItem
+import com.example.data.model.Product
 import com.example.data.repository.BillingRepository
+import com.example.data.repository.CommerceRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -57,6 +63,28 @@ data class OwnerPayoutMetrics(
 class BillingViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application, viewModelScope)
     private val repository = BillingRepository(database)
+    private val commerceRepository = CommerceRepository(application)
+
+    // E-Commerce Data Streams (Cloud Firestore with local offline support)
+    val allProducts: StateFlow<List<Product>> = commerceRepository.observeProducts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Product.defaultCatalog())
+
+    private val _userCart = MutableStateFlow(Cart(userId = "jurgen-westerveld"))
+    val userCart: StateFlow<Cart> = _userCart.asStateFlow()
+
+    val userOrders: StateFlow<List<Order>> = commerceRepository.observeUserOrders("jurgen-westerveld")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    init {
+        viewModelScope.launch {
+            commerceRepository.seedDefaultProductsIfEmpty()
+        }
+        viewModelScope.launch {
+            commerceRepository.observeUserCart("jurgen-westerveld").collect { cart ->
+                _userCart.value = cart
+            }
+        }
+    }
 
     // Data streams from Room
     val allInvoices: StateFlow<List<InvoiceEntity>> = repository.allInvoices
@@ -542,6 +570,167 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             repository.deletePayout(payout)
             _userFeedbackMessage.value = "Payout ${payout.id} deleted"
+        }
+    }
+
+    // --- E-Commerce & Store Actions ---
+    fun addToCart(product: Product, quantity: Int = 1) {
+        viewModelScope.launch {
+            val currentItems = _userCart.value.items.toMutableList()
+            val existingIndex = currentItems.indexOfFirst { it.productId == product.id }
+            if (existingIndex >= 0) {
+                val existing = currentItems[existingIndex]
+                currentItems[existingIndex] = existing.copy(quantity = existing.quantity + quantity)
+            } else {
+                currentItems.add(
+                    CartItem(
+                        productId = product.id,
+                        productName = product.name,
+                        quantity = quantity,
+                        priceAtTime = product.price,
+                        category = product.category
+                    )
+                )
+            }
+            val updatedCart = _userCart.value.copy(
+                updatedAt = System.currentTimeMillis(),
+                items = currentItems
+            )
+            _userCart.value = updatedCart
+            commerceRepository.saveUserCart(updatedCart)
+            _userFeedbackMessage.value = "Added \"${product.name}\" to Cart"
+        }
+    }
+
+    fun updateCartItemQuantity(productId: String, newQuantity: Int) {
+        viewModelScope.launch {
+            val currentItems = _userCart.value.items.toMutableList()
+            if (newQuantity <= 0) {
+                currentItems.removeAll { it.productId == productId }
+            } else {
+                val index = currentItems.indexOfFirst { it.productId == productId }
+                if (index >= 0) {
+                    currentItems[index] = currentItems[index].copy(quantity = newQuantity)
+                }
+            }
+            val updatedCart = _userCart.value.copy(
+                updatedAt = System.currentTimeMillis(),
+                items = currentItems
+            )
+            _userCart.value = updatedCart
+            commerceRepository.saveUserCart(updatedCart)
+        }
+    }
+
+    fun removeFromCart(productId: String) {
+        updateCartItemQuantity(productId, 0)
+    }
+
+    fun clearCart() {
+        viewModelScope.launch {
+            val emptyCart = Cart(userId = _userCart.value.userId)
+            _userCart.value = emptyCart
+            commerceRepository.clearUserCart(_userCart.value.userId)
+            _userFeedbackMessage.value = "Cart cleared"
+        }
+    }
+
+    fun checkoutOrder(
+        customerName: String = "Jurgen Paul Westerveld",
+        customerEmail: String = "westerveldjp@gmail.com",
+        shippingAddress: String = "Keizersgracht 421, 1016 EK Amsterdam, Netherlands"
+    ) {
+        viewModelScope.launch {
+            val cart = _userCart.value
+            if (cart.items.isEmpty()) {
+                _userFeedbackMessage.value = "Cannot checkout: Cart is empty"
+                return@launch
+            }
+
+            val orderId = "ORD-${(System.currentTimeMillis() % 100000).toString().padStart(5, '0')}"
+            val invoiceId = "INV-${(System.currentTimeMillis() % 100000).toString().padStart(5, '0')}"
+            val now = System.currentTimeMillis()
+
+            // 1. Build Order items
+            val orderItems = cart.items.map {
+                OrderItem(
+                    productId = it.productId,
+                    productName = it.productName,
+                    quantity = it.quantity,
+                    priceAtTime = it.priceAtTime
+                )
+            }
+
+            // 2. Build Invoice items with 21% EU VAT
+            val invoiceItems = cart.items.map {
+                InvoiceItem(
+                    id = "ITEM-${it.productId}",
+                    description = "${it.productName} (${it.category})",
+                    quantity = it.quantity.toDouble(),
+                    unitPrice = it.priceAtTime,
+                    taxRate = 21.0
+                )
+            }
+
+            val subtotal = invoiceItems.sumOf { it.subtotal }
+            val taxTotal = invoiceItems.sumOf { it.taxAmount }
+            val totalAmount = subtotal + taxTotal
+
+            // 3. Create and place Order in Firestore
+            val newOrder = Order(
+                id = orderId,
+                userId = cart.userId,
+                totalAmount = totalAmount,
+                status = "PAID",
+                createdAt = now,
+                items = orderItems,
+                invoiceId = invoiceId,
+                shippingAddress = shippingAddress,
+                customerEmail = customerEmail,
+                customerName = customerName
+            )
+
+            commerceRepository.placeOrder(newOrder)
+            _userCart.value = Cart(userId = cart.userId)
+
+            // 4. Auto-generate paid invoice in Billing system
+            val autoInvoice = InvoiceEntity(
+                id = invoiceId,
+                clientId = "CLI-STORE-${orderId.takeLast(4)}",
+                clientName = customerName,
+                clientEmail = customerEmail,
+                status = InvoiceStatus.PAID.name,
+                issueDate = now,
+                dueDate = now,
+                currency = "EUR",
+                itemsJson = InvoiceItemSerializer.toJson(invoiceItems),
+                subtotal = subtotal,
+                taxTotal = taxTotal,
+                discountTotal = 0.0,
+                totalAmount = totalAmount,
+                amountPaid = totalAmount,
+                paymentTerms = "Instant Checkout (SEPA/iDEAL)",
+                notes = "Auto-generated from Store Order #$orderId ($shippingAddress)",
+                paidAt = now,
+                createdAt = now
+            )
+            repository.saveInvoice(autoInvoice)
+
+            // 5. Record Payment transaction
+            val payment = PaymentEntity(
+                id = "PAY-${(System.currentTimeMillis() % 100000).toString().padStart(5, '0')}",
+                invoiceId = invoiceId,
+                clientName = customerName,
+                amount = totalAmount,
+                currency = "EUR",
+                paymentMethod = "Direct Store Checkout (Wero / SEPA Instant)",
+                transactionRef = "ORDER-$orderId",
+                paymentDate = now,
+                notes = "Real-time settlement for Order #$orderId"
+            )
+            repository.savePayment(payment)
+
+            _userFeedbackMessage.value = "Order #$orderId placed! Auto-generated Invoice #$invoiceId (€%.2f) and credited to balance".format(totalAmount)
         }
     }
 }
