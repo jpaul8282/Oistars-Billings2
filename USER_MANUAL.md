@@ -48,10 +48,11 @@ The following 5 promotional content images highlight the key user flows across t
 
 The Dashboard is your operational command center:
 1. **Total Invoiced & Collected Metrics**: Displays lifetime gross revenue, collected amounts, and collection rate percentages.
-2. **Cash Flow Visual Health Bar**: A tripartite visual progress gauge breaking down Paid, Pending, and Overdue fractions.
-3. **Owner Payout Quick Card**: Instant glance at funds available for owner distribution, beneficiary bank details, and one-tap withdrawal via Wero.
-4. **Recent Invoices Carousel**: Horizontally scrollable list of recent transactions with immediate status change actions.
-5. **Quick Create Invoice Modal**: Rapid action button to draft an invoice in under 30 seconds.
+2. **Monthly Revenue & Payments Trend Line Chart**: Interactive Bezier curve trend visualizer tracking monthly gross billing vs. collected payments over 6-month and 1-year windows, with MoM growth rates, interactive monthly tooltips, and series toggles.
+3. **Cash Flow Visual Health Bar**: A tripartite visual progress gauge breaking down Paid, Pending, and Overdue fractions.
+4. **Owner Payout Quick Card**: Instant glance at funds available for owner distribution, beneficiary bank details, and one-tap withdrawal via Wero.
+5. **Recent Invoices Carousel**: Horizontally scrollable list of recent transactions with immediate status change actions.
+6. **Quick Create Invoice Modal**: Rapid action button to draft an invoice in under 30 seconds.
 
 ---
 

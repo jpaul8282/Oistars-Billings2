@@ -71,6 +71,7 @@ import com.example.data.local.SubscriptionEntity
 import com.example.data.model.InvoiceItem
 import com.example.ui.components.Formatters
 import com.example.ui.components.MetricStatCard
+import com.example.ui.components.MonthlyRevenueTrendChart
 import com.example.ui.components.QuickCreateInvoiceDialog
 import com.example.ui.screens.ClientDetailModal
 import com.example.ui.theme.AccentGold
@@ -572,7 +573,15 @@ fun DashboardScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Monthly Revenue & Payments Trend Line Chart
+            MonthlyRevenueTrendChart(
+                invoices = recentInvoices,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(18.dp))
 
             // Quick Navigation Buttons
             Row(
