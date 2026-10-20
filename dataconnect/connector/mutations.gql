@@ -1,0 +1,37 @@
+mutation UpsertUser($email: String!, $fullName: String, $shippingAddress: String) @auth(level: USER) {
+  user_upsert(data: {
+    email: $email
+    fullName: $fullName
+    shippingAddress: $shippingAddress
+  })
+}
+
+mutation CreateProduct(
+  $name: String!
+  $price: Float!
+  $stockQuantity: Int!
+  $description: String
+  $imageUrl: String
+  $category: String
+) @auth(level: USER) {
+  product_insert(data: {
+    name: $name
+    price: $price
+    stockQuantity: $stockQuantity
+    description: $description
+    imageUrl: $imageUrl
+    category: $category
+  })
+}
+
+mutation CreateOrder(
+  $userId: UUID!
+  $totalAmount: Float!
+  $status: String!
+) @auth(level: USER) {
+  order_insert(data: {
+    userId: $userId
+    totalAmount: $totalAmount
+    status: $status
+  })
+}

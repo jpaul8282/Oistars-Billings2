@@ -1,0 +1,27 @@
+query ListProducts @auth(level: PUBLIC) {
+  products {
+    id
+    name
+    price
+    stockQuantity
+    description
+    imageUrl
+    category
+  }
+}
+
+query GetUserCart($userId: UUID!) @auth(level: USER) {
+  cart(key: { userId: $userId }) {
+    userId
+    updatedAt
+  }
+}
+
+query ListUserOrders($userId: UUID!) @auth(level: USER) {
+  orders(where: { userId: { eq: $userId } }) {
+    id
+    totalAmount
+    status
+    createdAt
+  }
+}
