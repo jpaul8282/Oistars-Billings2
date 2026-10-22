@@ -24,6 +24,7 @@ import com.example.data.model.OrderItem
 import com.example.data.model.Product
 import com.example.data.repository.BillingRepository
 import com.example.data.repository.CommerceRepository
+import com.example.data.repository.OrderRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -64,20 +65,27 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
     private val database = AppDatabase.getDatabase(application, viewModelScope)
     private val repository = BillingRepository(database)
     private val commerceRepository = CommerceRepository(application)
+    val orderRepository = OrderRepository(database.orderDao(), application)
 
-    // E-Commerce Data Streams (Cloud Firestore with local offline support)
+    // E-Commerce Data Streams (Cloud Firestore with local offline support via Room)
     val allProducts: StateFlow<List<Product>> = commerceRepository.observeProducts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Product.defaultCatalog())
 
     private val _userCart = MutableStateFlow(Cart(userId = "jurgen-westerveld"))
     val userCart: StateFlow<Cart> = _userCart.asStateFlow()
 
-    val userOrders: StateFlow<List<Order>> = commerceRepository.observeUserOrders("jurgen-westerveld")
+    val userOrders: StateFlow<List<Order>> = orderRepository.allOrders
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
         viewModelScope.launch {
             commerceRepository.seedDefaultProductsIfEmpty()
+            orderRepository.syncOrdersFromFirestore("jurgen-westerveld")
+        }
+        viewModelScope.launch {
+            orderRepository.observeAndSyncRealtime("jurgen-westerveld").collect {
+                // Incoming remote orders automatically synced to Room
+            }
         }
         viewModelScope.launch {
             commerceRepository.observeUserCart("jurgen-westerveld").collect { cart ->
@@ -677,20 +685,22 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
             val totalAmount = subtotal + taxTotal
 
             // 3. Create and place Order in Firestore
+            // 3. Create and place Order in Room and Cloud Firestore via OrderRepository
             val newOrder = Order(
                 id = orderId,
-                userId = cart.userId,
-                totalAmount = totalAmount,
+                clientID = cart.userId,
+                productIDs = orderItems.map { it.productId },
+                amount = totalAmount,
                 status = "PAID",
-                createdAt = now,
-                items = orderItems,
+                timestamp = now,
                 invoiceId = invoiceId,
                 shippingAddress = shippingAddress,
                 customerEmail = customerEmail,
                 customerName = customerName
             )
 
-            commerceRepository.placeOrder(newOrder)
+            orderRepository.insertOrder(newOrder, syncToCloud = true)
+            commerceRepository.clearUserCart(cart.userId)
             _userCart.value = Cart(userId = cart.userId)
 
             // 4. Auto-generate paid invoice in Billing system

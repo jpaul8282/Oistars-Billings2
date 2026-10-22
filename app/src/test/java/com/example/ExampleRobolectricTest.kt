@@ -119,4 +119,79 @@ class ExampleRobolectricTest {
     org.junit.Assert.assertTrue("PDF file should have positive size", pdfFile.length() > 0)
     assertEquals("Invoice_INV-2026-001.pdf", pdfFile.name)
   }
+
+  @Test
+  fun `verify order data class fields and firestore mapping`() {
+    val order = com.example.data.model.Order(
+      id = "ORD-99001",
+      clientID = "CLI-1001",
+      productIDs = listOf("PROD-CLOUD-HOST", "PROD-API-GATEWAY"),
+      amount = 369.00,
+      status = "PAID",
+      timestamp = 1772841600000L
+    )
+
+    assertEquals("ORD-99001", order.id)
+    assertEquals("CLI-1001", order.clientID)
+    assertEquals(2, order.productIDs.size)
+    assertEquals("PROD-CLOUD-HOST", order.productIDs[0])
+    assertEquals("PROD-API-GATEWAY", order.productIDs[1])
+    assertEquals(369.00, order.amount, 0.001)
+    assertEquals("PAID", order.status)
+    assertEquals(1772841600000L, order.timestamp)
+
+    // Test Firestore toMap and fromMap
+    val map = order.toMap()
+    assertEquals("CLI-1001", map["clientID"])
+    assertEquals(369.00, map["amount"])
+    assertEquals("PAID", map["status"])
+
+    val reconstructed = com.example.data.model.Order.fromMap(map, fallbackId = "FALLBACK")
+    assertEquals(order.id, reconstructed.id)
+    assertEquals(order.clientID, reconstructed.clientID)
+    assertEquals(order.productIDs, reconstructed.productIDs)
+    assertEquals(order.amount, reconstructed.amount, 0.001)
+    assertEquals(order.status, reconstructed.status)
+    assertEquals(order.timestamp, reconstructed.timestamp)
+  }
+
+  @Test
+  fun `verify room order dao and string list converter`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val inMemoryDb = androidx.room.Room.inMemoryDatabaseBuilder(
+      context,
+      com.example.data.local.AppDatabase::class.java
+    ).allowMainThreadQueries().build()
+
+    val orderDao = inMemoryDb.orderDao()
+
+    val order = com.example.data.model.Order(
+      id = "ORD-ROOM-001",
+      clientID = "CLI-1002",
+      productIDs = listOf("PROD-SECURITY-AUDIT", "PROD-TECH-RETAINER"),
+      amount = 2300.00,
+      status = "PENDING",
+      timestamp = System.currentTimeMillis()
+    )
+
+    orderDao.insertOrder(order)
+
+    val fetched = orderDao.getOrderById("ORD-ROOM-001")
+    org.junit.Assert.assertNotNull(fetched)
+    assertEquals("CLI-1002", fetched?.clientID)
+    assertEquals(2, fetched?.productIDs?.size)
+    assertEquals("PROD-SECURITY-AUDIT", fetched?.productIDs?.get(0))
+    assertEquals("PROD-TECH-RETAINER", fetched?.productIDs?.get(1))
+    assertEquals(2300.00, fetched?.amount ?: 0.0, 0.001)
+    assertEquals("PENDING", fetched?.status)
+
+    // Update status
+    val updated = order.copy(status = "COMPLETED")
+    orderDao.updateOrder(updated)
+    val fetchedUpdated = orderDao.getOrderById("ORD-ROOM-001")
+    assertEquals("COMPLETED", fetchedUpdated?.status)
+
+    inMemoryDb.close()
+  }
 }
+

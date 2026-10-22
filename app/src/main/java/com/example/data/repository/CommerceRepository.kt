@@ -144,17 +144,18 @@ class CommerceRepository(
     suspend fun placeOrder(order: Order): Result<Order> {
         return try {
             val batch = db.batch()
+            val targetUserId = order.clientID.ifEmpty { order.userId }
 
             // 1. Write order doc
             val orderDocRef = db.collection("users")
-                .document(order.userId)
+                .document(targetUserId)
                 .collection("orders")
                 .document(order.id)
-            batch.set(orderDocRef, order.toMap())
+            batch.set(orderDocRef, order.toMap(), SetOptions.merge())
 
             // 2. Clear user's active cart
             val cartDocRef = db.collection("users")
-                .document(order.userId)
+                .document(targetUserId)
                 .collection("cart")
                 .document("active_cart")
             batch.delete(cartDocRef)

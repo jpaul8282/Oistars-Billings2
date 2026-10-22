@@ -1,5 +1,10 @@
 package com.example.data.model
 
+import androidx.room.Entity
+import androidx.room.Ignore
+import androidx.room.PrimaryKey
+import androidx.room.TypeConverters
+import com.example.data.local.StringListConverter
 import java.util.UUID
 
 data class CommerceUser(
@@ -207,24 +212,79 @@ data class OrderItem(
     }
 }
 
+@Entity(tableName = "orders")
+@TypeConverters(StringListConverter::class)
 data class Order(
+    @PrimaryKey
     val id: String = "ORD-${(System.currentTimeMillis() % 100000).toString().padStart(5, '0')}",
-    val userId: String,
-    val totalAmount: Double,
+    val clientID: String,
+    val productIDs: List<String> = emptyList(),
+    val amount: Double = 0.0,
     val status: String = "PAID", // PENDING, PAID, SHIPPED, COMPLETED
-    val createdAt: Long = System.currentTimeMillis(),
-    val items: List<OrderItem> = emptyList(),
+    val timestamp: Long = System.currentTimeMillis(),
     val invoiceId: String? = null,
     val shippingAddress: String = "",
     val customerEmail: String = "",
     val customerName: String = ""
 ) {
+    @Ignore
+    constructor(
+        id: String = "ORD-${(System.currentTimeMillis() % 100000).toString().padStart(5, '0')}",
+        userId: String,
+        totalAmount: Double,
+        status: String = "PAID",
+        createdAt: Long = System.currentTimeMillis(),
+        items: List<OrderItem> = emptyList(),
+        invoiceId: String? = null,
+        shippingAddress: String = "",
+        customerEmail: String = "",
+        customerName: String = ""
+    ) : this(
+        id = id,
+        clientID = userId,
+        productIDs = items.map { it.productId },
+        amount = totalAmount,
+        status = status,
+        timestamp = createdAt,
+        invoiceId = invoiceId,
+        shippingAddress = shippingAddress,
+        customerEmail = customerEmail,
+        customerName = customerName
+    )
+
+    @get:Ignore
+    val userId: String
+        get() = clientID
+
+    @get:Ignore
+    val totalAmount: Double
+        get() = amount
+
+    @get:Ignore
+    val createdAt: Long
+        get() = timestamp
+
+    @get:Ignore
+    val items: List<OrderItem>
+        get() = productIDs.map { prodId ->
+            OrderItem(
+                productId = prodId,
+                productName = "Product $prodId",
+                quantity = 1,
+                priceAtTime = if (productIDs.isNotEmpty()) amount / productIDs.size else amount
+            )
+        }
+
     fun toMap(): Map<String, Any?> = mapOf(
         "id" to id,
-        "userId" to userId,
-        "totalAmount" to totalAmount,
+        "clientID" to clientID,
+        "userId" to clientID,
+        "productIDs" to productIDs,
+        "amount" to amount,
+        "totalAmount" to amount,
         "status" to status,
-        "createdAt" to createdAt,
+        "timestamp" to timestamp,
+        "createdAt" to timestamp,
         "items" to items.map { it.toMap() },
         "invoiceId" to invoiceId,
         "shippingAddress" to shippingAddress,
@@ -235,14 +295,23 @@ data class Order(
     companion object {
         fun fromMap(data: Map<String, Any?>, fallbackId: String = ""): Order {
             val id = (data["id"] as? String) ?: fallbackId
-            val userId = (data["userId"] as? String) ?: ""
-            val totalAmount = (data["totalAmount"] as? Number)?.toDouble() ?: 0.0
+            val clientID = (data["clientID"] as? String) ?: (data["userId"] as? String) ?: ""
+            val amount = (data["amount"] as? Number)?.toDouble()
+                ?: (data["totalAmount"] as? Number)?.toDouble() ?: 0.0
             val status = (data["status"] as? String) ?: "PAID"
-            val createdAt = (data["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
-            val rawItems = (data["items"] as? List<*>) ?: emptyList<Any>()
-            val items = rawItems.mapNotNull { itemMap ->
-                (itemMap as? Map<String, Any?>)?.let { OrderItem.fromMap(it) }
+            val timestamp = (data["timestamp"] as? Number)?.toLong()
+                ?: (data["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+
+            val rawProductIds = data["productIDs"] as? List<*>
+            val productIDs: List<String> = if (rawProductIds != null) {
+                rawProductIds.mapNotNull { it?.toString() }
+            } else {
+                val rawItems = (data["items"] as? List<*>) ?: emptyList<Any>()
+                rawItems.mapNotNull { itemMap ->
+                    (itemMap as? Map<String, Any?>)?.let { OrderItem.fromMap(it).productId }
+                }
             }
+
             val invoiceId = data["invoiceId"] as? String
             val shippingAddress = (data["shippingAddress"] as? String) ?: ""
             val customerEmail = (data["customerEmail"] as? String) ?: ""
@@ -250,11 +319,11 @@ data class Order(
 
             return Order(
                 id = id,
-                userId = userId,
-                totalAmount = totalAmount,
+                clientID = clientID,
+                productIDs = productIDs,
+                amount = amount,
                 status = status,
-                createdAt = createdAt,
-                items = items,
+                timestamp = timestamp,
                 invoiceId = invoiceId,
                 shippingAddress = shippingAddress,
                 customerEmail = customerEmail,
@@ -263,3 +332,4 @@ data class Order(
         }
     }
 }
+

@@ -12,6 +12,8 @@ import com.example.data.model.InvoiceStatus
 import com.example.data.model.SubscriptionStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import androidx.room.TypeConverters
+import com.example.data.model.Order
 import kotlinx.coroutines.launch
 
 @Database(
@@ -20,17 +22,20 @@ import kotlinx.coroutines.launch
         InvoiceEntity::class,
         SubscriptionEntity::class,
         PaymentEntity::class,
-        PayoutEntity::class
+        PayoutEntity::class,
+        Order::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
+@TypeConverters(StringListConverter::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun clientDao(): ClientDao
     abstract fun invoiceDao(): InvoiceDao
     abstract fun subscriptionDao(): SubscriptionDao
     abstract fun paymentDao(): PaymentDao
     abstract fun payoutDao(): PayoutDao
+    abstract fun orderDao(): OrderDao
 
     companion object {
         @Volatile
@@ -408,6 +413,32 @@ abstract class AppDatabase : RoomDatabase() {
             )
 
             payoutDao.insertPayouts(listOf(po1, po2, po3))
+
+            // 6. Seed Orders
+            val orderDao = database.orderDao()
+            val o1 = Order(
+                id = "ORD-2026-001",
+                clientID = c1.id,
+                productIDs = listOf("PROD-CLOUD-HOST", "PROD-API-GATEWAY"),
+                amount = 369.00,
+                status = "PAID",
+                timestamp = now - (15 * dayMs),
+                shippingAddress = "Keizersgracht 421, 1016 EK Amsterdam",
+                customerEmail = "accounting@nordicgourmet.eu",
+                customerName = "Lars Lindqvist"
+            )
+            val o2 = Order(
+                id = "ORD-2026-002",
+                clientID = c2.id,
+                productIDs = listOf("PROD-SECURITY-AUDIT"),
+                amount = 1450.00,
+                status = "PAID",
+                timestamp = now - (3 * dayMs),
+                shippingAddress = "Witte de Withstraat 88, 3012 BT Rotterdam",
+                customerEmail = "billing@artisanpearl.nl",
+                customerName = "Sophie de Vries"
+            )
+            orderDao.insertOrders(listOf(o1, o2))
         }
     }
 }
