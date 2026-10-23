@@ -193,5 +193,26 @@ class ExampleRobolectricTest {
 
     inMemoryDb.close()
   }
+
+  @Test
+  fun `verify revenue chart point metrics and average order value`() {
+    val point = com.example.ui.components.RevenueChartPoint(
+      monthShort = "Oct",
+      monthFull = "October 2026",
+      orderRevenue = 4500.00,
+      billedRevenue = 6200.00,
+      totalRevenue = 10700.00,
+      orderCount = 5,
+      paidOrderCount = 4
+    )
+
+    assertEquals("Oct", point.monthShort)
+    assertEquals(4500.00, point.orderRevenue, 0.001)
+    assertEquals(6200.00, point.billedRevenue, 0.001)
+    assertEquals(10700.00, point.totalRevenue, 0.001)
+    assertEquals(5, point.orderCount)
+    assertEquals(900.00, point.averageOrderValue, 0.001)
+  }
 }
+
 

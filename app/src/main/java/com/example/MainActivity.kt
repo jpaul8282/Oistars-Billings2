@@ -336,6 +336,7 @@ fun MainBillingApp(
                         recentInvoices = invoices,
                         activeSubscriptions = subscriptions,
                         clients = clients,
+                        orders = orders,
                         onNavigateToInvoices = { currentDestination = NavigationDestination.INVOICES },
                         onNavigateToClients = { currentDestination = NavigationDestination.CLIENTS },
                         onNavigateToSubscriptions = { currentDestination = NavigationDestination.SUBSCRIPTIONS },

@@ -1,0 +1,25 @@
+{
+  "name": "oistars-billings-backend",
+  "version": "1.0.0",
+  "description": "Backend services, Cloud Functions, and Firebase Admin SDK order & invoice settlement engine for Oistars Billings",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "serve": "firebase emulators:start --only functions,firestore",
+    "shell": "firebase functions:shell",
+    "deploy": "firebase deploy --only functions",
+    "seed": "node scripts/seed-database.js",
+    "test-order": "node scripts/test-order-flow.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^5.0.0"
+  },
+  "devDependencies": {},
+  "private": true
+}

@@ -70,9 +70,11 @@ import com.example.data.local.ClientEntity
 import com.example.data.local.InvoiceEntity
 import com.example.data.local.SubscriptionEntity
 import com.example.data.model.InvoiceItem
+import com.example.data.model.Order
 import com.example.ui.components.Formatters
 import com.example.ui.components.MetricStatCard
 import com.example.ui.components.MonthlyRevenueTrendChart
+import com.example.ui.components.RevenueChart
 import com.example.ui.components.QuickCreateInvoiceDialog
 import com.example.ui.screens.ClientDetailModal
 import com.example.ui.theme.AccentGold
@@ -94,6 +96,7 @@ fun DashboardScreen(
     recentInvoices: List<InvoiceEntity>,
     activeSubscriptions: List<SubscriptionEntity>,
     clients: List<ClientEntity>,
+    orders: List<Order> = emptyList(),
     onNavigateToInvoices: () -> Unit,
     onNavigateToClients: () -> Unit,
     onNavigateToSubscriptions: () -> Unit,
@@ -577,8 +580,9 @@ fun DashboardScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Monthly Revenue & Payments Trend Line Chart
-            MonthlyRevenueTrendChart(
+            // Monthly Revenue & Payments Trend Line Chart with Firestore Orders & Invoices Integration
+            RevenueChart(
+                orders = orders,
                 invoices = recentInvoices,
                 modifier = Modifier.fillMaxWidth()
             )
