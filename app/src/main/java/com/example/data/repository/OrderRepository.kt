@@ -5,6 +5,7 @@ import android.util.Log
 import com.example.data.local.OrderDao
 import com.example.data.model.Order
 import com.google.firebase.FirebaseApp
+import com.google.firebase.firestore.DocumentChange
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.oistars.billings.R
@@ -165,36 +166,189 @@ class OrderRepository(
     }
 
     /**
-     * Real-time snapshot listener on Cloud Firestore.
-     * Caches all remote updates into Room so the UI can observe Room with zero network lag.
+     * Real-time update event details detailing additions and status changes.
      */
-    fun observeAndSyncRealtime(clientId: String = "jurgen-westerveld"): Flow<List<Order>> = callbackFlow {
+    data class OrderRealtimeEvent(
+        val allOrders: List<Order>,
+        val addedOrders: List<Order> = emptyList(),
+        val modifiedOrders: List<Order> = emptyList(),
+        val removedOrderIds: List<String> = emptyList(),
+        val changeDescription: String? = null
+    )
+
+    /**
+     * Listens for real-time updates from the Firestore 'Orders' collection:
+     * - Detects newly added orders and status changes (e.g. PENDING -> PAID).
+     * - Persists changes into the local Room database (which automatically emits
+     *   through Room Flow to update the RevenueChart in real time).
+     * - Emits the full updated order list directly.
+     */
+    fun listenForRealtimeOrderUpdates(clientId: String = "jurgen-westerveld"): Flow<List<Order>> = callbackFlow {
+        val collectionRef = db.collection("users")
+            .document(clientId)
+            .collection("orders")
+
+        Log.d(TAG, "Attaching real-time Firestore listener for orders of client: $clientId")
+
+        val listener = collectionRef.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                Log.w(TAG, "Error in Firestore real-time orders listener: ${error.message}", error)
+                return@addSnapshotListener
+            }
+
+            if (snapshot != null) {
+                val allOrders = snapshot.documents.mapNotNull { doc ->
+                    doc.data?.let { Order.fromMap(it, fallbackId = doc.id) }
+                }
+
+                val addedOrders = mutableListOf<Order>()
+                val modifiedOrders = mutableListOf<Order>()
+                val removedOrderIds = mutableListOf<String>()
+
+                for (change in snapshot.documentChanges) {
+                    val order = change.document.data?.let { Order.fromMap(it, fallbackId = change.document.id) }
+                    when (change.type) {
+                        DocumentChange.Type.ADDED -> {
+                            if (order != null) addedOrders.add(order)
+                        }
+                        DocumentChange.Type.MODIFIED -> {
+                            if (order != null) {
+                                modifiedOrders.add(order)
+                                Log.d(TAG, "Real-time status change: Order #${order.id} status is now '${order.status}'")
+                            }
+                        }
+                        DocumentChange.Type.REMOVED -> {
+                            removedOrderIds.add(change.document.id)
+                        }
+                    }
+                }
+
+                // Caching in Room triggers Room Flow, keeping RevenueChart in sync offline & online
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val toUpsert = addedOrders + modifiedOrders
+                        if (toUpsert.isNotEmpty()) {
+                            orderDao.insertOrders(toUpsert)
+                        }
+                        for (removedId in removedOrderIds) {
+                            orderDao.deleteOrderById(removedId)
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed caching real-time orders update into Room: ${e.message}")
+                    }
+                }
+
+                trySend(allOrders)
+            }
+        }
+
+        awaitClose {
+            Log.d(TAG, "Detaching real-time Firestore orders listener for client: $clientId")
+            listener.remove()
+        }
+    }
+
+    /**
+     * Streams rich real-time update events with descriptions of new orders and status transitions.
+     */
+    fun listenForRealtimeOrderEvents(clientId: String = "jurgen-westerveld"): Flow<OrderRealtimeEvent> = callbackFlow {
         val collectionRef = db.collection("users")
             .document(clientId)
             .collection("orders")
 
         val listener = collectionRef.addSnapshotListener { snapshot, error ->
             if (error != null) {
-                Log.w(TAG, "Error in Firestore order realtime listener: ${error.message}", error)
+                Log.w(TAG, "Error in Firestore real-time orders event listener: ${error.message}", error)
                 return@addSnapshotListener
             }
+
             if (snapshot != null) {
-                val remoteOrders = snapshot.documents.mapNotNull { doc ->
+                val allOrders = snapshot.documents.mapNotNull { doc ->
                     doc.data?.let { Order.fromMap(it, fallbackId = doc.id) }
                 }
-                if (remoteOrders.isNotEmpty()) {
-                    CoroutineScope(Dispatchers.IO).launch {
-                        try {
-                            orderDao.insertOrders(remoteOrders)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Failed caching remote orders into Room: ${e.message}")
-                        }
+
+                val added = mutableListOf<Order>()
+                val modified = mutableListOf<Order>()
+                val removed = mutableListOf<String>()
+
+                for (change in snapshot.documentChanges) {
+                    val order = change.document.data?.let { Order.fromMap(it, fallbackId = change.document.id) }
+                    when (change.type) {
+                        DocumentChange.Type.ADDED -> order?.let { added.add(it) }
+                        DocumentChange.Type.MODIFIED -> order?.let { modified.add(it) }
+                        DocumentChange.Type.REMOVED -> removed.add(change.document.id)
                     }
                 }
-                trySend(remoteOrders)
+
+                val desc = when {
+                    modified.isNotEmpty() -> "Order #${modified.first().id} status updated to ${modified.first().status}"
+                    added.isNotEmpty() -> "New Order #${added.first().id} placed (€%.2f)".format(added.first().amount)
+                    removed.isNotEmpty() -> "Order #${removed.first()} removed"
+                    else -> null
+                }
+
+                CoroutineScope(Dispatchers.IO).launch {
+                    val toUpsert = added + modified
+                    if (toUpsert.isNotEmpty()) orderDao.insertOrders(toUpsert)
+                    removed.forEach { orderDao.deleteOrderById(it) }
+                }
+
+                trySend(
+                    OrderRealtimeEvent(
+                        allOrders = allOrders,
+                        addedOrders = added,
+                        modifiedOrders = modified,
+                        removedOrderIds = removed,
+                        changeDescription = desc
+                    )
+                )
             }
         }
+
         awaitClose { listener.remove() }
+    }
+
+    /**
+     * Backward-compatible alias for observeAndSyncRealtime.
+     */
+    fun observeAndSyncRealtime(clientId: String = "jurgen-westerveld"): Flow<List<Order>> {
+        return listenForRealtimeOrderUpdates(clientId)
+    }
+
+    /**
+     * Updates an order's status both in Room and Cloud Firestore, which triggers
+     * the real-time listener and updates the RevenueChart.
+     */
+    suspend fun updateOrderStatus(
+        orderId: String,
+        newStatus: String,
+        clientId: String = "jurgen-westerveld"
+    ): Result<Unit> {
+        return try {
+            val existing = orderDao.getOrderById(orderId)
+            val updated = existing?.copy(status = newStatus) ?: Order(
+                id = orderId,
+                clientID = clientId,
+                status = newStatus
+            )
+
+            // Update in Room
+            orderDao.insertOrder(updated)
+
+            // Update in Firestore
+            db.collection("users")
+                .document(clientId)
+                .collection("orders")
+                .document(orderId)
+                .update("status", newStatus)
+                .await()
+
+            Log.d(TAG, "Order #$orderId status updated to $newStatus in Room & Firestore")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed updating order status: ${e.message}", e)
+            Result.failure(e)
+        }
     }
 
     private suspend fun syncSingleOrderToFirestore(order: Order) {
@@ -207,3 +361,4 @@ class OrderRepository(
             .await()
     }
 }
+

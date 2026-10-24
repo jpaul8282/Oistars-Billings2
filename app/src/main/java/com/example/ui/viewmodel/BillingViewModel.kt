@@ -77,14 +77,32 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
     val userOrders: StateFlow<List<Order>> = orderRepository.allOrders
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // Real-time order change notification for UI feedback
+    private val _realtimeOrderAlert = MutableStateFlow<String?>(null)
+    val realtimeOrderAlert: StateFlow<String?> = _realtimeOrderAlert.asStateFlow()
+
+    fun dismissOrderAlert() {
+        _realtimeOrderAlert.value = null
+    }
+
+    fun updateOrderStatus(orderId: String, newStatus: String) {
+        viewModelScope.launch {
+            orderRepository.updateOrderStatus(orderId, newStatus, _userCart.value.userId)
+            _userFeedbackMessage.value = "Order #$orderId status updated to $newStatus"
+        }
+    }
+
     init {
         viewModelScope.launch {
             commerceRepository.seedDefaultProductsIfEmpty()
             orderRepository.syncOrdersFromFirestore("jurgen-westerveld")
         }
         viewModelScope.launch {
-            orderRepository.observeAndSyncRealtime("jurgen-westerveld").collect {
-                // Incoming remote orders automatically synced to Room
+            orderRepository.listenForRealtimeOrderEvents("jurgen-westerveld").collect { event ->
+                if (event.changeDescription != null) {
+                    _realtimeOrderAlert.value = event.changeDescription
+                    _userFeedbackMessage.value = "⚡ ${event.changeDescription}"
+                }
             }
         }
         viewModelScope.launch {

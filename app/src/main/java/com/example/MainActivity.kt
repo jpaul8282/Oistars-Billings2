@@ -160,6 +160,7 @@ fun MainBillingApp(
     val products by viewModel.allProducts.collectAsStateWithLifecycle()
     val cart by viewModel.userCart.collectAsStateWithLifecycle()
     val orders by viewModel.userOrders.collectAsStateWithLifecycle()
+    val realtimeOrderAlert by viewModel.realtimeOrderAlert.collectAsStateWithLifecycle()
 
     if (currentDestination != NavigationDestination.DASHBOARD) {
         BackHandler {
@@ -337,6 +338,8 @@ fun MainBillingApp(
                         activeSubscriptions = subscriptions,
                         clients = clients,
                         orders = orders,
+                        realtimeOrderAlert = realtimeOrderAlert,
+                        onDismissOrderAlert = { viewModel.dismissOrderAlert() },
                         onNavigateToInvoices = { currentDestination = NavigationDestination.INVOICES },
                         onNavigateToClients = { currentDestination = NavigationDestination.CLIENTS },
                         onNavigateToSubscriptions = { currentDestination = NavigationDestination.SUBSCRIPTIONS },

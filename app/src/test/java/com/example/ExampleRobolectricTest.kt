@@ -213,6 +213,32 @@ class ExampleRobolectricTest {
     assertEquals(5, point.orderCount)
     assertEquals(900.00, point.averageOrderValue, 0.001)
   }
+
+  @Test
+  fun `verify order realtime event and status change notification payload`() {
+    val initialOrder = com.example.data.model.Order(
+      id = "ORD-STATUS-01",
+      clientID = "CLI-1001",
+      productIDs = listOf("PROD-CLOUD-HOST"),
+      amount = 249.00,
+      status = "PENDING",
+      timestamp = System.currentTimeMillis()
+    )
+
+    val updatedOrder = initialOrder.copy(status = "PAID")
+
+    val event = com.example.data.repository.OrderRepository.OrderRealtimeEvent(
+      allOrders = listOf(updatedOrder),
+      modifiedOrders = listOf(updatedOrder),
+      changeDescription = "Order #ORD-STATUS-01 status updated to PAID"
+    )
+
+    assertEquals(1, event.allOrders.size)
+    assertEquals(1, event.modifiedOrders.size)
+    assertEquals("PAID", event.modifiedOrders.first().status)
+    assertEquals("Order #ORD-STATUS-01 status updated to PAID", event.changeDescription)
+  }
 }
+
 
 

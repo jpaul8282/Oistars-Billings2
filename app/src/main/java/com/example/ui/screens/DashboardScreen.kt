@@ -17,10 +17,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import android.widget.Toast
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Autorenew
@@ -97,6 +103,8 @@ fun DashboardScreen(
     activeSubscriptions: List<SubscriptionEntity>,
     clients: List<ClientEntity>,
     orders: List<Order> = emptyList(),
+    realtimeOrderAlert: String? = null,
+    onDismissOrderAlert: () -> Unit = {},
     onNavigateToInvoices: () -> Unit,
     onNavigateToClients: () -> Unit,
     onNavigateToSubscriptions: () -> Unit,
@@ -579,6 +587,45 @@ fun DashboardScreen(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+
+            // Real-time Firestore Order update notification banner
+            AnimatedVisibility(
+                visible = realtimeOrderAlert != null,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Surface(
+                    color = OceanBlue.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp)
+                        .testTag("dashboard_realtime_order_alert")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("⚡", fontSize = 14.sp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = realtimeOrderAlert ?: "",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = OceanBlue
+                            )
+                        }
+                        IconButton(
+                            onClick = onDismissOrderAlert,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Dismiss", modifier = Modifier.size(14.dp))
+                        }
+                    }
+                }
+            }
 
             // Monthly Revenue & Payments Trend Line Chart with Firestore Orders & Invoices Integration
             RevenueChart(
