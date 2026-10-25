@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -59,6 +60,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.InvoiceEntity
 import com.example.data.model.InvoiceStatus
+import com.example.data.service.InvoiceCommunicationTone
+import com.example.ui.components.AiCommunicationGeneratorDialog
 import com.example.ui.components.ExportPdfDialog
 import com.example.ui.components.Formatters
 import com.example.ui.components.RecordPaymentDialog
@@ -81,6 +84,7 @@ fun InvoiceDetailSheet(
     var showPaymentDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showExportPdfDialog by remember { mutableStateOf(false) }
+    var showAiCommDialog by remember { mutableStateOf(false) }
 
     val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -438,6 +442,27 @@ fun InvoiceDetailSheet(
                     }
                 }
 
+                // AI Client Communication / Reminder Action
+                OutlinedButton(
+                    onClick = { showAiCommDialog = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("invoice_detail_ai_comm_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = OceanBlue
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "AI Client Communication & Reminder",
+                        fontWeight = FontWeight.SemiBold,
+                        color = OceanBlue
+                    )
+                }
+
                 // Primary Export PDF action
                 Button(
                     onClick = { showExportPdfDialog = true },
@@ -504,6 +529,26 @@ fun InvoiceDetailSheet(
                     Text("Cancel")
                 }
             }
+        )
+    }
+
+    if (showAiCommDialog) {
+        val initialTone = if (invoice.balanceDue > 0 && invoice.invoiceStatus == InvoiceStatus.OVERDUE) {
+            InvoiceCommunicationTone.OVERDUE_NOTICE
+        } else if (invoice.balanceDue > 0) {
+            InvoiceCommunicationTone.PAYMENT_REMINDER
+        } else {
+            InvoiceCommunicationTone.FRIENDLY_WELCOME
+        }
+
+        AiCommunicationGeneratorDialog(
+            clientName = invoice.clientName,
+            invoiceId = invoice.id,
+            amount = if (invoice.balanceDue > 0) invoice.balanceDue else invoice.totalAmount,
+            currency = invoice.currency,
+            dueDate = Formatters.formatDate(invoice.dueDate),
+            initialTone = initialTone,
+            onDismiss = { showAiCommDialog = false }
         )
     }
 }

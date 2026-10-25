@@ -503,6 +503,8 @@ fun MainBillingApp(
                     OwnerPayoutScreen(
                         metrics = payoutMetrics,
                         payouts = payouts,
+                        orders = orders,
+                        invoices = invoices,
                         onRequestPayout = { amount, ownerId, ownerName, bank, iban, bic, speed, ref, notes ->
                             viewModel.requestOwnerPayout(
                                 amount = amount,

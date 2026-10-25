@@ -644,7 +644,7 @@ fun RevenueChart(
  * Aggregates Firestore Order entities and Invoice entities into monthly data points.
  * Ensures realistic baseline growth so charts remain smooth and actionable in early deployment.
  */
-private fun aggregateMonthlyData(
+internal fun aggregateMonthlyData(
     orders: List<Order>,
     invoices: List<InvoiceEntity>,
     monthsCount: Int
@@ -697,7 +697,7 @@ private fun aggregateMonthlyData(
                 orderRevenue = finalOrderRevenue,
                 billedRevenue = finalBilledRevenue,
                 orderCount = finalOrderCount,
-                paidOrderCount = if (paidOrderCount > 0) paidOrderCount else finalOrderCount
+                paidOrderCount = if (orderCount > 0) paidOrderCount else finalOrderCount
             )
         )
     }

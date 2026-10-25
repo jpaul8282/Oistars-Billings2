@@ -16,7 +16,13 @@ This directory contains the server-side backend logic for **Oistars Billings**, 
    - Tracks fulfillment status changes (`PENDING` -> `PAID` -> `COMPLETED` -> `SHIPPED`).
    - Writes immutable timestamped audit entries to `/users/{userId}/audit_logs/`.
 
-3. **REST API & Webhooks (`api`)**
+3. **Genkit Server-Side AI Flows (`helloFlow`, `generateInvoiceCommunication`)**
+   - Keeps Gemini API keys strictly secured on the server, never exposed in client APKs.
+   - `helloFlow` - Cloud Function flow testing Gemini model invocation.
+   - `generateInvoiceCommunication` - Cloud Function flow generating tailored client invoice notes, formal B2B terms, payment reminders, overdue notices, and Wero/SEPA instant wire instructions.
+   - `POST /api/ai/invoice-communication` & `POST /api/ai/hello` - REST endpoints for webhooks and direct client integrations.
+
+4. **REST API & Webhooks (`api`)**
    - `GET /api/health` - Health check and database connection diagnostics.
    - `POST /api/orders` - External e-commerce webhook or API order submission.
    - `GET /api/orders?clientID=...` - List orders for a client.

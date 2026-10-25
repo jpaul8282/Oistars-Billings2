@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
@@ -58,6 +59,8 @@ import androidx.compose.ui.unit.sp
 import com.example.data.local.ClientEntity
 import com.example.data.model.InvoiceItem
 import com.example.data.model.InvoiceStatus
+import com.example.data.service.InvoiceCommunicationTone
+import com.example.ui.components.AiCommunicationGeneratorDialog
 import com.example.ui.components.Formatters
 import com.example.ui.theme.OceanBlue
 import com.example.ui.theme.StatusPaid
@@ -91,6 +94,7 @@ fun CreateInvoiceSheet(
     var paymentTerms by remember { mutableStateOf("Net 14 Days") }
     var termsDropdownExpanded by remember { mutableStateOf(false) }
     var notesText by remember { mutableStateOf("Payment via SEPA / iDEAL to Oistars Billings Account.") }
+    var showAiGeneratorDialog by remember { mutableStateOf(false) }
 
     // Line items list
     val lineItems = remember {
@@ -421,12 +425,42 @@ fun CreateInvoiceSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Notes
+            // Notes & AI Communication Generator
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Invoice Notes & Instructions",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                TextButton(
+                    onClick = { showAiGeneratorDialog = true },
+                    modifier = Modifier.testTag("open_ai_note_generator_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = OceanBlue,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "AI Generate Note",
+                        color = OceanBlue,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+
             OutlinedTextField(
                 value = notesText,
                 onValueChange = { notesText = it },
-                label = { Text("Invoice Notes & Instructions") },
-                maxLines = 3,
+                placeholder = { Text("Enter notes, bank wire terms, or generate with AI...") },
+                maxLines = 4,
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -531,5 +565,21 @@ fun CreateInvoiceSheet(
                 }
             }
         }
+    }
+
+    if (showAiGeneratorDialog) {
+        val cName = if (isNewClientMode) customClientName.ifBlank { "Client Store" } else selectedClient?.name ?: "Client Store"
+        AiCommunicationGeneratorDialog(
+            clientName = cName,
+            invoiceId = "INV-NEW",
+            amount = grandTotal,
+            currency = selectedCurrency,
+            dueDate = paymentTerms,
+            initialTone = InvoiceCommunicationTone.FRIENDLY_WELCOME,
+            onDismiss = { showAiGeneratorDialog = false },
+            onApplyToInvoiceNotes = { generatedNote ->
+                notesText = generatedNote
+            }
+        )
     }
 }

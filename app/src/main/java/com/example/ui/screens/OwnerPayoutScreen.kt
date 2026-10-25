@@ -36,10 +36,11 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Verified
+import java.util.Locale
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -84,9 +85,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.local.InvoiceEntity
 import com.example.data.local.PayoutEntity
 import com.example.data.local.PayoutSpeed
 import com.example.data.local.PayoutStatus
+import com.example.data.model.Order
 import com.example.ui.components.Formatters
 import com.example.ui.theme.AccentGold
 import com.example.ui.theme.NavyDark
@@ -103,6 +106,8 @@ import com.example.ui.viewmodel.OwnerPayoutMetrics
 fun OwnerPayoutScreen(
     metrics: OwnerPayoutMetrics,
     payouts: List<PayoutEntity>,
+    orders: List<Order> = emptyList(),
+    invoices: List<InvoiceEntity> = emptyList(),
     onRequestPayout: (
         amount: Double,
         ownerId: String,
@@ -506,6 +511,23 @@ fun OwnerPayoutScreen(
                     }
                 }
             }
+        }
+
+        // Section 2B: Revenue Settlement & Funds Breakdown (Pending vs. Cleared Funds based on Order status)
+        item {
+            RevenueFundsBreakdownCard(
+                metrics = metrics,
+                orders = orders,
+                modifier = Modifier.testTag("revenue_breakdown_section")
+            )
+        }
+
+        // Section 2C: Order Settlement Ledger by Order Status
+        item {
+            OrderSettlementLedgerCard(
+                orders = orders,
+                modifier = Modifier.testTag("order_settlement_ledger_card")
+            )
         }
 
         // Section 3: Automated Payout Rules & Working Capital Settings
@@ -1353,3 +1375,591 @@ fun PayoutDetailDialog(
         }
     )
 }
+
+/**
+ * Payouts UI section that calculates and displays owner revenue balances based on
+ * the 'Order' status and payment history, including a breakdown of pending vs. cleared funds.
+ */
+@Composable
+fun RevenueFundsBreakdownCard(
+    metrics: OwnerPayoutMetrics,
+    orders: List<Order>,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp)
+        ) {
+            // Header: Title and Live Settlement Badge
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = CircleShape,
+                        color = OceanBlue.copy(alpha = 0.12f),
+                        modifier = Modifier.size(38.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Default.Payments,
+                                contentDescription = "Revenue Balances",
+                                tint = OceanBlue,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Revenue Settlement & Balances",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Calculated from Order status & payment history",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Surface(
+                    color = StatusPaid.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(StatusPaid)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "LIVE AUDIT",
+                            color = StatusPaid,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Gross Revenue & Clearance Ratio Summary Banner
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Total Gross Revenue Generated",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = Formatters.formatCurrency(metrics.grossRevenueTotal, metrics.currency),
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = OceanBlue.copy(alpha = 0.15f)
+                        ) {
+                            Text(
+                                text = "${metrics.clearanceRatePercent}% Cleared",
+                                color = OceanBlue,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Progress clearance split bar
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(StatusPending.copy(alpha = 0.35f))
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(fraction = (metrics.clearanceRatePercent / 100f).coerceIn(0.05f, 1f))
+                                .height(8.dp)
+                                .background(StatusPaid)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(StatusPaid)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Cleared & Ready: €%,.2f".format(Locale.GERMANY, metrics.availableBalance),
+                                fontSize = 10.sp,
+                                color = StatusPaid,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(StatusPending)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Pending Settlement: €%,.2f".format(Locale.GERMANY, metrics.pendingFundsBalance),
+                                fontSize = 10.sp,
+                                color = StatusPending,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Two Detailed Cards: Cleared Funds vs. Pending Funds
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Card A: Cleared Funds
+                Card(
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("card_cleared_funds"),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = StatusPaid.copy(alpha = 0.08f)
+                    ),
+                    border = CardDefaults.outlinedCardBorder().copy(
+                        brush = androidx.compose.ui.graphics.SolidColor(StatusPaid.copy(alpha = 0.3f))
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = StatusPaid,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "CLEARED FUNDS",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = StatusPaid
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Text(
+                            text = Formatters.formatCurrency(metrics.availableBalance, metrics.currency),
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = StatusPaid
+                        )
+
+                        Text(
+                            text = "Immediately withdrawable",
+                            fontSize = 9.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        HorizontalDivider(color = StatusPaid.copy(alpha = 0.2f))
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "• Store Orders: €%,.2f".format(Locale.GERMANY, metrics.clearedOrdersAmount),
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "  (${metrics.clearedOrdersCount} paid/completed)",
+                            fontSize = 9.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Text(
+                            text = "• Paid Invoices: €%,.2f".format(Locale.GERMANY, metrics.clearedInvoicesAmount),
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Text(
+                            text = "• Lifetime Draws: -€%,.2f".format(Locale.GERMANY, metrics.totalPaidOutLifetime),
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                // Card B: Pending Funds
+                Card(
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("card_pending_funds"),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = StatusPending.copy(alpha = 0.08f)
+                    ),
+                    border = CardDefaults.outlinedCardBorder().copy(
+                        brush = androidx.compose.ui.graphics.SolidColor(StatusPending.copy(alpha = 0.3f))
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.HourglassTop,
+                                contentDescription = null,
+                                tint = StatusPending,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "PENDING CLEARANCE",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = StatusPending
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Text(
+                            text = Formatters.formatCurrency(metrics.pendingFundsBalance, metrics.currency),
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = StatusPending
+                        )
+
+                        Text(
+                            text = "Awaiting gateway clearing",
+                            fontSize = 9.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        HorizontalDivider(color = StatusPending.copy(alpha = 0.2f))
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "• Pending Orders: €%,.2f".format(Locale.GERMANY, metrics.pendingOrdersAmount),
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "  (${metrics.pendingOrdersCount} awaiting clearance)",
+                            fontSize = 9.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Text(
+                            text = "• Open Invoices: €%,.2f".format(Locale.GERMANY, metrics.pendingInvoicesAmount),
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Text(
+                            text = "• In-Transit Draws: €%,.2f".format(Locale.GERMANY, metrics.pendingPayoutsAmount),
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Order Settlement Ledger displaying store orders with their payment clearance status
+ * (PAID / COMPLETED vs. PENDING / PROCESSING).
+ */
+@Composable
+fun OrderSettlementLedgerCard(
+    orders: List<Order>,
+    modifier: Modifier = Modifier
+) {
+    var selectedTab by remember { mutableStateOf("ALL") } // ALL, CLEARED, PENDING
+
+    val clearedOrders = remember(orders) {
+        orders.filter { it.status.equals("PAID", ignoreCase = true) || it.status.equals("COMPLETED", ignoreCase = true) }
+    }
+    val pendingOrders = remember(orders) {
+        orders.filter { it.status.equals("PENDING", ignoreCase = true) || it.status.equals("PROCESSING", ignoreCase = true) }
+    }
+
+    val displayOrders = remember(orders, selectedTab) {
+        when (selectedTab) {
+            "CLEARED" -> clearedOrders
+            "PENDING" -> pendingOrders
+            else -> orders
+        }
+    }
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.5.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.ShoppingBag,
+                        contentDescription = null,
+                        tint = OceanBlue,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Store Orders Settlement Ledger",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Text(
+                        text = "${orders.size} Total Orders",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Filter chips
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                FilterChip(
+                    selected = selectedTab == "ALL",
+                    onClick = { selectedTab = "ALL" },
+                    label = { Text("All (${orders.size})", fontSize = 11.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = OceanBlue.copy(alpha = 0.15f),
+                        selectedLabelColor = OceanBlue
+                    ),
+                    modifier = Modifier.testTag("chip_filter_orders_all")
+                )
+                FilterChip(
+                    selected = selectedTab == "CLEARED",
+                    onClick = { selectedTab = "CLEARED" },
+                    label = { Text("Cleared (${clearedOrders.size})", fontSize = 11.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = StatusPaid.copy(alpha = 0.15f),
+                        selectedLabelColor = StatusPaid
+                    ),
+                    modifier = Modifier.testTag("chip_filter_orders_cleared")
+                )
+                FilterChip(
+                    selected = selectedTab == "PENDING",
+                    onClick = { selectedTab = "PENDING" },
+                    label = { Text("Pending (${pendingOrders.size})", fontSize = 11.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = StatusPending.copy(alpha = 0.15f),
+                        selectedLabelColor = StatusPending
+                    ),
+                    modifier = Modifier.testTag("chip_filter_orders_pending")
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            if (displayOrders.isEmpty()) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "No store orders in this clearance category.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(14.dp)
+                    )
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    displayOrders.take(6).forEach { order ->
+                        val isCleared = order.status.equals("PAID", ignoreCase = true) ||
+                                        order.status.equals("COMPLETED", ignoreCase = true)
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("order_ledger_item_${order.id}")
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = if (isCleared) StatusPaid.copy(alpha = 0.12f) else StatusPending.copy(alpha = 0.12f),
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = if (isCleared) Icons.Default.CheckCircle else Icons.Default.HourglassTop,
+                                                contentDescription = null,
+                                                tint = if (isCleared) StatusPaid else StatusPending,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    Column {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = "#${order.id}",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = if (isCleared) StatusPaid.copy(alpha = 0.15f) else StatusPending.copy(alpha = 0.15f)
+                                            ) {
+                                                Text(
+                                                    text = if (isCleared) "CLEARED" else "PENDING",
+                                                    fontSize = 8.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isCleared) StatusPaid else StatusPending,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                )
+                                            }
+                                        }
+
+                                        Text(
+                                            text = if (order.customerName.isNotBlank()) order.customerName else "Client: ${order.clientID}",
+                                            fontSize = 10.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+
+                                        Text(
+                                            text = "${order.productIDs.size} items • ${Formatters.formatRelativeTime(order.timestamp)}",
+                                            fontSize = 9.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                                        )
+                                    }
+                                }
+
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = "€%,.2f".format(Locale.GERMANY, order.amount),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = if (isCleared) OceanBlue else StatusPending
+                                    )
+                                    Text(
+                                        text = order.status.uppercase(),
+                                        fontSize = 9.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

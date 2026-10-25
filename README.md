@@ -1,10 +1,13 @@
 # Oistars Billings
 
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/9831/badge)](https://www.bestpractices.dev/)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/1/badge)](https://www.bestpractices.dev/en/projects/1/passing)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/oistars/billings/badge)](https://securityscorecards.dev/)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/jpaul8282/Oistars-Billings2)
 [![Security Policy](https://img.shields.io/badge/security-OpenSSF%20Compliant-blue.svg)](SECURITY.md)
 [![User Manual](https://img.shields.io/badge/Documentation-User%20Manual-informational.svg)](USER_MANUAL.md)
+[![Contributing](https://img.shields.io/badge/Contributions-Welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Changelog](https://img.shields.io/badge/Changelog-Keep%20a%20Changelog-orange.svg)](CHANGELOG.md)
 [![ProGuard Security](https://img.shields.io/badge/Security-ProGuard%20Hardened-red.svg)](PROGUARD_SECURITY.md)
 [![Beneficiary IBAN](https://img.shields.io/badge/ING%20IBAN-NL43INGB0006372146-orange.svg)](#-bankwire--wero-instant-payout-system)
 [![Payment Network](https://img.shields.io/badge/Instant%20Wire-Wero%20%7C%20EPI%20%7C%20SEPA-blueviolet.svg)](#-wero-european-payments-initiative-integration)
@@ -192,8 +195,33 @@ gradle assembleRelease
 
 ---
 
+## 🛡️ OpenSSF Best Practices & Governance
+
+This project adheres to the **OpenSSF Best Practices Badge (Passing Level)** standard:
+- **[OpenSSF Best Practices Audit](OPENSSF_BEST_PRACTICES.md)**: Criterion-by-criterion verification report (66/66 passing).
+- **[Security Policy](SECURITY.md)**: Coordinated Vulnerability Disclosure (CVD), SLA response commitments, and cryptographic standards.
+- **[Contributing Guide](CONTRIBUTING.md)**: Contribution standards, PR workflows, and build verification.
+- **[Code of Conduct](CODE_OF_CONDUCT.md)**: Contributor Covenant v2.1.
+- **[Changelog](CHANGELOG.md)**: Semantic version history adhering to Keep a Changelog.
+- **[Support Policy](SUPPORT.md)**: Official support channels and maintainer contact.
+
+---
+
 ## 📄 License & Attribution
 
-Copyright © 2026 Oistars. All rights reserved.  
-**Billing Owner & Lead**: Jurgen Paul Westerveld (`westerveldjp@gmail.com`)  
-Support & Inquiries: `oistarsentertainment@gmail.com`
+This project is licensed under the **[Apache License 2.0](LICENSE)**.
+
+```
+Copyright 2026 Jurgen Paul Westerveld <westerveldjp@gmail.com>
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+```
+
+**Lead Merchant & Developer**: Jurgen Paul Westerveld (`westerveldjp@gmail.com`)  
+**Security Contact**: `security@oistars.nl`  
+**General Support**: `oistarsentertainment@gmail.com`
+

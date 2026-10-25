@@ -25,6 +25,10 @@ import com.example.data.model.Product
 import com.example.data.repository.BillingRepository
 import com.example.data.repository.CommerceRepository
 import com.example.data.repository.OrderRepository
+import com.example.data.service.AiBillingCommunicationService
+import com.example.data.service.InvoiceCommunicationRequest
+import com.example.data.service.InvoiceCommunicationResult
+import com.example.data.service.InvoiceCommunicationTone
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -58,7 +62,17 @@ data class OwnerPayoutMetrics(
     val inTransitPayoutsCount: Int = 0,
     val lastPayoutDate: Long? = null,
     val lastPayoutAmount: Double? = null,
-    val currency: String = "EUR"
+    val currency: String = "EUR",
+    val clearedFundsBalance: Double = 0.0,
+    val pendingFundsBalance: Double = 0.0,
+    val grossRevenueTotal: Double = 0.0,
+    val clearedOrdersAmount: Double = 0.0,
+    val clearedOrdersCount: Int = 0,
+    val pendingOrdersAmount: Double = 0.0,
+    val pendingOrdersCount: Int = 0,
+    val clearedInvoicesAmount: Double = 0.0,
+    val pendingInvoicesAmount: Double = 0.0,
+    val clearanceRatePercent: Int = 100
 )
 
 class BillingViewModel(application: Application) : AndroidViewModel(application) {
@@ -66,6 +80,13 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
     private val repository = BillingRepository(database)
     private val commerceRepository = CommerceRepository(application)
     val orderRepository = OrderRepository(database.orderDao(), application)
+    val aiBillingService = AiBillingCommunicationService(application)
+
+    private val _isGeneratingAiCommunication = MutableStateFlow(false)
+    val isGeneratingAiCommunication: StateFlow<Boolean> = _isGeneratingAiCommunication.asStateFlow()
+
+    private val _lastGeneratedAiCommunication = MutableStateFlow<InvoiceCommunicationResult?>(null)
+    val lastGeneratedAiCommunication: StateFlow<InvoiceCommunicationResult?> = _lastGeneratedAiCommunication.asStateFlow()
 
     // E-Commerce Data Streams (Cloud Firestore with local offline support via Room)
     val allProducts: StateFlow<List<Product>> = commerceRepository.observeProducts()
@@ -131,19 +152,46 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
     val ownerPayoutMetrics: StateFlow<OwnerPayoutMetrics> = combine(
         allPayments,
         allInvoices,
-        allPayouts
-    ) { payments, invoices, payouts ->
+        allPayouts,
+        userOrders
+    ) { payments, invoices, payouts, orders ->
+        // 1. Store Orders Breakdown based on Order status (PAID/COMPLETED vs PENDING/PROCESSING)
+        val clearedOrders = orders.filter {
+            it.status.equals("PAID", ignoreCase = true) || it.status.equals("COMPLETED", ignoreCase = true)
+        }
+        val clearedOrdersAmount = clearedOrders.sumOf { it.amount }
+        val clearedOrdersCount = clearedOrders.size
+
+        val pendingOrders = orders.filter {
+            it.status.equals("PENDING", ignoreCase = true) || it.status.equals("PROCESSING", ignoreCase = true)
+        }
+        val pendingOrdersAmount = pendingOrders.sumOf { it.amount }
+        val pendingOrdersCount = pendingOrders.size
+
+        // 2. Invoices & Payments History Breakdown
         val paymentsCollected = payments.sumOf { it.amount }
         val invoicesPaidCollected = invoices.filter { it.status == "PAID" }.sumOf { it.totalAmount }
         val baseGrossCollected = maxOf(paymentsCollected, invoicesPaidCollected, 9850.0)
 
+        val pendingInvoices = invoices.filter { it.status == "PENDING" || it.status == "OVERDUE" }
+        val pendingInvoicesAmount = pendingInvoices.sumOf { it.balanceDue }
+
+        // 3. Historical Payouts & In-Transit Deductions
         val completedPayouts = payouts.filter { it.status == PayoutStatus.COMPLETED.name }
-        val inTransitPayouts = payouts.filter { it.status == PayoutStatus.PROCESSING.name || it.status == PayoutStatus.SCHEDULED.name }
+        val inTransitPayouts = payouts.filter {
+            it.status == PayoutStatus.PROCESSING.name || it.status == PayoutStatus.SCHEDULED.name
+        }
 
         val totalPaidOut = completedPayouts.sumOf { it.amount }
         val pendingAmount = inTransitPayouts.sumOf { it.amount }
 
-        val available = (baseGrossCollected - totalPaidOut - pendingAmount).coerceAtLeast(0.0)
+        // 4. Balances: Cleared vs Pending Funds
+        val totalClearedGross = baseGrossCollected + clearedOrdersAmount
+        val available = (totalClearedGross - totalPaidOut - pendingAmount).coerceAtLeast(0.0)
+        val totalPendingFunds = pendingOrdersAmount + pendingInvoicesAmount
+        val grossTotal = totalClearedGross + totalPendingFunds
+        val clearanceRate = if (grossTotal > 0) ((totalClearedGross / grossTotal) * 100).toInt().coerceIn(0, 100) else 100
+
         val lastCompleted = completedPayouts.maxByOrNull { it.completedAt ?: it.initiatedAt }
 
         OwnerPayoutMetrics(
@@ -155,7 +203,17 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
             inTransitPayoutsCount = inTransitPayouts.size,
             lastPayoutDate = lastCompleted?.completedAt ?: lastCompleted?.initiatedAt,
             lastPayoutAmount = lastCompleted?.amount,
-            currency = "EUR"
+            currency = "EUR",
+            clearedFundsBalance = available,
+            pendingFundsBalance = totalPendingFunds,
+            grossRevenueTotal = grossTotal,
+            clearedOrdersAmount = clearedOrdersAmount,
+            clearedOrdersCount = clearedOrdersCount,
+            pendingOrdersAmount = pendingOrdersAmount,
+            pendingOrdersCount = pendingOrdersCount,
+            clearedInvoicesAmount = baseGrossCollected,
+            pendingInvoicesAmount = pendingInvoicesAmount,
+            clearanceRatePercent = clearanceRate
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), OwnerPayoutMetrics())
 
@@ -759,6 +817,34 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
             repository.savePayment(payment)
 
             _userFeedbackMessage.value = "Order #$orderId placed! Auto-generated Invoice #$invoiceId (€%.2f) and credited to balance".format(totalAmount)
+        }
+    }
+
+    fun generateAiInvoiceCommunication(
+        clientName: String,
+        invoiceId: String,
+        amount: Double,
+        currency: String = "EUR",
+        dueDate: String = "Net 14 Days",
+        tone: InvoiceCommunicationTone = InvoiceCommunicationTone.FRIENDLY_WELCOME,
+        customInstructions: String = "",
+        onResult: (InvoiceCommunicationResult) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _isGeneratingAiCommunication.value = true
+            val req = InvoiceCommunicationRequest(
+                clientName = clientName,
+                invoiceId = invoiceId,
+                amount = amount,
+                currency = currency,
+                dueDate = dueDate,
+                tone = tone,
+                customInstructions = customInstructions
+            )
+            val result = aiBillingService.generateCommunication(req)
+            _lastGeneratedAiCommunication.value = result
+            _isGeneratingAiCommunication.value = false
+            onResult(result)
         }
     }
 }

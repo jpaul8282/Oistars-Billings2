@@ -284,4 +284,44 @@ app.post("/api/webhooks/wero", async (req, res) => {
   }
 });
 
+// =========================================================================
+// 3. GENKIT SERVER-SIDE AI FLOWS (Keeps API key securely on backend)
+// =========================================================================
+
+const { helloFlow, generateInvoiceCommunicationFlow } = require("./genkit-flow");
+
+// REST Endpoints for Genkit AI flows
+app.post("/api/ai/hello", async (req, res) => {
+  try {
+    const { name } = req.body || {};
+    const result = await helloFlow(name || "Chris");
+    return res.json({ success: true, ...result });
+  } catch (error) {
+    console.error("Error executing helloFlow:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/ai/invoice-communication", async (req, res) => {
+  try {
+    const result = await generateInvoiceCommunicationFlow(req.body || {});
+    return res.json(result);
+  } catch (error) {
+    console.error("Error executing generateInvoiceCommunicationFlow:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// Primary Cloud Function HTTP API (contains all Express endpoints)
 exports.api = functions.https.onRequest(app);
+
+// Dedicated Callable Cloud Functions for Firebase SDK clients
+exports.helloFlow = functions.https.onCall(async (data, context) => {
+  const name = (data && data.name) || (typeof data === "string" ? data : "Chris");
+  return await helloFlow(name);
+});
+
+exports.generateInvoiceCommunication = functions.https.onCall(async (data, context) => {
+  return await generateInvoiceCommunicationFlow(data || {});
+});
+

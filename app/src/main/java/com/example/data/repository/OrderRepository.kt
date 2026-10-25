@@ -27,10 +27,12 @@ private const val TAG = "OrderRepository"
 class OrderRepository(
     private val orderDao: OrderDao,
     private val context: Context,
-    private val db: FirebaseFirestore = FirebaseFirestore.getInstance(
-        FirebaseApp.getInstance(),
-        context.getString(R.string.firestore_database_id)
-    )
+    private val db: FirebaseFirestore? = runCatching {
+        FirebaseFirestore.getInstance(
+            FirebaseApp.getInstance(),
+            context.getString(R.string.firestore_database_id)
+        )
+    }.getOrNull()
 ) {
     /**
      * Reactive stream of all orders persisted locally in Room.
@@ -60,7 +62,7 @@ class OrderRepository(
             orderDao.insertOrder(order)
 
             // 2. Sync to Cloud Firestore
-            if (syncToCloud) {
+            if (syncToCloud && db != null) {
                 syncSingleOrderToFirestore(order)
             }
             Result.success(order)
@@ -76,7 +78,7 @@ class OrderRepository(
     suspend fun updateOrder(order: Order, syncToCloud: Boolean = true): Result<Order> {
         return try {
             orderDao.updateOrder(order)
-            if (syncToCloud) {
+            if (syncToCloud && db != null) {
                 syncSingleOrderToFirestore(order)
             }
             Result.success(order)
@@ -92,7 +94,7 @@ class OrderRepository(
     suspend fun deleteOrder(order: Order, syncToCloud: Boolean = true): Result<Unit> {
         return try {
             orderDao.deleteOrder(order)
-            if (syncToCloud) {
+            if (syncToCloud && db != null) {
                 val targetOwner = order.clientID.ifEmpty { "jurgen-westerveld" }
                 db.collection("users")
                     .document(targetOwner)
@@ -113,8 +115,9 @@ class OrderRepository(
      * and saves them into the local Room database.
      */
     suspend fun syncOrdersFromFirestore(clientId: String = "jurgen-westerveld"): Result<List<Order>> {
+        val firestore = db ?: return Result.failure(IllegalStateException("Firestore instance not available"))
         return try {
-            val snapshot = db.collection("users")
+            val snapshot = firestore.collection("users")
                 .document(clientId)
                 .collection("orders")
                 .get()
@@ -139,6 +142,7 @@ class OrderRepository(
      * Pushes all local Room orders for a client up to Cloud Firestore using a batch write.
      */
     suspend fun syncOrdersToFirestore(clientId: String = "jurgen-westerveld"): Result<Int> {
+        val firestore = db ?: return Result.failure(IllegalStateException("Firestore instance not available"))
         return try {
             val localList = orderDao.getOrdersForClient(clientId).firstOrNull()
                 ?: orderDao.getAllOrders().firstOrNull()
@@ -148,9 +152,9 @@ class OrderRepository(
                 return Result.success(0)
             }
 
-            val batch = db.batch()
+            val batch = firestore.batch()
             for (order in localList) {
-                val targetDoc = db.collection("users")
+                val targetDoc = firestore.collection("users")
                     .document(clientId)
                     .collection("orders")
                     .document(order.id)
@@ -184,7 +188,18 @@ class OrderRepository(
      * - Emits the full updated order list directly.
      */
     fun listenForRealtimeOrderUpdates(clientId: String = "jurgen-westerveld"): Flow<List<Order>> = callbackFlow {
-        val collectionRef = db.collection("users")
+        val firestore = db
+        if (firestore == null) {
+            val job = launch {
+                orderDao.getOrdersForClient(clientId).collect { localOrders ->
+                    trySend(localOrders)
+                }
+            }
+            awaitClose { job.cancel() }
+            return@callbackFlow
+        }
+
+        val collectionRef = firestore.collection("users")
             .document(clientId)
             .collection("orders")
 
@@ -252,7 +267,50 @@ class OrderRepository(
      * Streams rich real-time update events with descriptions of new orders and status transitions.
      */
     fun listenForRealtimeOrderEvents(clientId: String = "jurgen-westerveld"): Flow<OrderRealtimeEvent> = callbackFlow {
-        val collectionRef = db.collection("users")
+        val firestore = db
+        if (firestore == null) {
+            var previousList: List<Order>? = null
+            val job = launch {
+                orderDao.getOrdersForClient(clientId).collect { currentList ->
+                    val prev = previousList
+                    if (prev != null) {
+                        val added = currentList.filter { c -> prev.none { it.id == c.id } }
+                        val modified = currentList.filter { c ->
+                            prev.any { it.id == c.id && it.status != c.status }
+                        }
+                        val removed = prev.filter { p -> currentList.none { it.id == p.id } }.map { it.id }
+
+                        val desc = when {
+                            modified.isNotEmpty() -> "Order #${modified.first().id} status updated to ${modified.first().status}"
+                            added.isNotEmpty() -> "New Order #${added.first().id} placed (€%.2f)".format(added.first().amount)
+                            removed.isNotEmpty() -> "Order #${removed.first()} removed"
+                            else -> null
+                        }
+
+                        trySend(
+                            OrderRealtimeEvent(
+                                allOrders = currentList,
+                                addedOrders = added,
+                                modifiedOrders = modified,
+                                removedOrderIds = removed,
+                                changeDescription = desc
+                            )
+                        )
+                    } else {
+                        trySend(
+                            OrderRealtimeEvent(
+                                allOrders = currentList
+                            )
+                        )
+                    }
+                    previousList = currentList
+                }
+            }
+            awaitClose { job.cancel() }
+            return@callbackFlow
+        }
+
+        val collectionRef = firestore.collection("users")
             .document(clientId)
             .collection("orders")
 
@@ -336,12 +394,12 @@ class OrderRepository(
             orderDao.insertOrder(updated)
 
             // Update in Firestore
-            db.collection("users")
-                .document(clientId)
-                .collection("orders")
-                .document(orderId)
-                .update("status", newStatus)
-                .await()
+            db?.collection("users")
+                ?.document(clientId)
+                ?.collection("orders")
+                ?.document(orderId)
+                ?.update("status", newStatus)
+                ?.await()
 
             Log.d(TAG, "Order #$orderId status updated to $newStatus in Room & Firestore")
             Result.success(Unit)
@@ -352,8 +410,9 @@ class OrderRepository(
     }
 
     private suspend fun syncSingleOrderToFirestore(order: Order) {
+        val firestore = db ?: return
         val targetOwner = order.clientID.ifEmpty { "jurgen-westerveld" }
-        db.collection("users")
+        firestore.collection("users")
             .document(targetOwner)
             .collection("orders")
             .document(order.id)
