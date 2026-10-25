@@ -288,7 +288,7 @@ app.post("/api/webhooks/wero", async (req, res) => {
 // 3. GENKIT SERVER-SIDE AI FLOWS (Keeps API key securely on backend)
 // =========================================================================
 
-const { helloFlow, generateInvoiceCommunicationFlow } = require("./genkit-flow");
+const { helloFlow, generateInvoiceCommunicationFlow, bargainChefFlow, imageGeneratorFlow } = require("./genkit-flow");
 
 // REST Endpoints for Genkit AI flows
 app.post("/api/ai/hello", async (req, res) => {
@@ -312,6 +312,30 @@ app.post("/api/ai/invoice-communication", async (req, res) => {
   }
 });
 
+// Bargain Chef REST endpoint matching Genkit Next.js API route format
+app.post(["/api/bargainChefFlow", "/api/ai/bargain-chef"], async (req, res) => {
+  try {
+    const craving = (req.body && req.body.data && req.body.data.craving) || (req.body && req.body.craving) || "something warm with chicken";
+    const result = await bargainChefFlow({ craving });
+    return res.json({ result, output: result, ...result });
+  } catch (error) {
+    console.error("Error executing bargainChefFlow:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// Image Generator REST endpoint
+app.post(["/api/imageGeneratorFlow", "/api/ai/generate-image"], async (req, res) => {
+  try {
+    const concept = (req.body && req.body.data && req.body.data.concept) || (req.body && req.body.concept) || "invoice branding artwork";
+    const imageUrl = await imageGeneratorFlow({ concept });
+    return res.json({ imageUrl, result: imageUrl, output: imageUrl });
+  } catch (error) {
+    console.error("Error executing imageGeneratorFlow:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // Primary Cloud Function HTTP API (contains all Express endpoints)
 exports.api = functions.https.onRequest(app);
 
@@ -324,4 +348,16 @@ exports.helloFlow = functions.https.onCall(async (data, context) => {
 exports.generateInvoiceCommunication = functions.https.onCall(async (data, context) => {
   return await generateInvoiceCommunicationFlow(data || {});
 });
+
+exports.bargainChefFlow = functions.https.onCall(async (data, context) => {
+  const craving = (data && data.craving) || (typeof data === "string" ? data : "something warm with chicken");
+  return await bargainChefFlow({ craving });
+});
+
+exports.imageGeneratorFlow = functions.https.onCall(async (data, context) => {
+  const concept = (data && data.concept) || (typeof data === "string" ? data : "brand invoice emblem");
+  return await imageGeneratorFlow({ concept });
+});
+
+
 
