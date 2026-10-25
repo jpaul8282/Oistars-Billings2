@@ -7,6 +7,10 @@
 
 const { genkit, z } = require("genkit");
 const { googleAI } = require("@genkit-ai/googleai");
+const { enableFirebaseTelemetry } = require("@genkit-ai/firebase");
+
+// Enable Firebase / Google Cloud telemetry for Genkit flows
+enableFirebaseTelemetry();
 
 // Resolve server-side Gemini API key securely
 const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY || "";
