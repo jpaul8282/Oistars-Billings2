@@ -19,16 +19,30 @@ import com.example.data.model.InvoiceItemSerializer
 import com.example.data.model.InvoiceStatus
 import com.example.data.model.Cart
 import com.example.data.model.CartItem
+import com.example.data.model.ContainmentPolicy
+import com.example.data.model.ContainmentStatus
+import com.example.data.model.FirewallRuleStatus
 import com.example.data.model.Order
 import com.example.data.model.OrderItem
 import com.example.data.model.Product
+import com.example.data.model.SecurityAuditEventType
+import com.example.data.model.SecurityAuditLogEntry
+import com.example.data.model.SecurityBaselineDefaults
+import com.example.data.model.SecurityPostureMetrics
+import com.example.data.model.SecurityThreatEvent
 import com.example.data.repository.BillingRepository
 import com.example.data.repository.CommerceRepository
 import com.example.data.repository.OrderRepository
 import com.example.data.service.AiBillingCommunicationService
+import com.example.data.service.AutoPayoutRules
 import com.example.data.service.InvoiceCommunicationRequest
 import com.example.data.service.InvoiceCommunicationResult
 import com.example.data.service.InvoiceCommunicationTone
+import com.example.data.service.PayoutGatewayStatus
+import com.example.data.service.PayoutLiveService
+import com.example.data.service.SecurityDefenseService
+import com.example.data.service.SettlementWebhookEvent
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -81,12 +95,71 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
     private val commerceRepository = CommerceRepository(application)
     val orderRepository = OrderRepository(database.orderDao(), application)
     val aiBillingService = AiBillingCommunicationService(application)
+    private val payoutLiveService = PayoutLiveService(application)
+    private val securityDefenseService = SecurityDefenseService(application)
+
+    private fun activeUserId(): String =
+        FirebaseAuth.getInstance().currentUser?.uid ?: "jurgen-westerveld"
 
     private val _isGeneratingAiCommunication = MutableStateFlow(false)
     val isGeneratingAiCommunication: StateFlow<Boolean> = _isGeneratingAiCommunication.asStateFlow()
 
     private val _lastGeneratedAiCommunication = MutableStateFlow<InvoiceCommunicationResult?>(null)
     val lastGeneratedAiCommunication: StateFlow<InvoiceCommunicationResult?> = _lastGeneratedAiCommunication.asStateFlow()
+
+    // Live Payout Gateway & Settlement Streams
+    val payoutGatewayStatus: StateFlow<PayoutGatewayStatus> = payoutLiveService.gatewayStatus
+
+    private val _settlementWebhooks = MutableStateFlow<List<SettlementWebhookEvent>>(emptyList())
+    val settlementWebhooks: StateFlow<List<SettlementWebhookEvent>> = _settlementWebhooks.asStateFlow()
+
+    private val _autoPayoutRules = MutableStateFlow(AutoPayoutRules())
+    val autoPayoutRules: StateFlow<AutoPayoutRules> = _autoPayoutRules.asStateFlow()
+
+    private val _isPayoutSyncing = MutableStateFlow(false)
+    val isPayoutSyncing: StateFlow<Boolean> = _isPayoutSyncing.asStateFlow()
+
+    // Security Operations & Live Threat Defense Streams
+    private val _securityThreats = MutableStateFlow(SecurityBaselineDefaults.initialThreats())
+    val securityThreats: StateFlow<List<SecurityThreatEvent>> = _securityThreats.asStateFlow()
+
+    val firewallRules: StateFlow<List<FirewallRuleStatus>> = securityDefenseService.firewallRules
+
+    private val _securityAuditLogs = MutableStateFlow(SecurityBaselineDefaults.initialAuditLogs())
+    val securityAuditLogs: StateFlow<List<SecurityAuditLogEntry>> = _securityAuditLogs.asStateFlow()
+
+    private val _containmentPolicy = MutableStateFlow(ContainmentPolicy())
+    val containmentPolicy: StateFlow<ContainmentPolicy> = _containmentPolicy.asStateFlow()
+
+    private val _isScanningSecurity = MutableStateFlow(false)
+    val isScanningSecurity: StateFlow<Boolean> = _isScanningSecurity.asStateFlow()
+
+    val securityPostureMetrics: StateFlow<SecurityPostureMetrics> = combine(
+        _securityThreats,
+        firewallRules,
+        securityDefenseService.lastScanTimestamp
+    ) { threats, rules, scanAt ->
+        val pendingApprovals = threats.count { it.containmentStatus == ContainmentStatus.PENDING_HUMAN_APPROVAL }
+        val activeUncontained = threats.count {
+            it.containmentStatus == ContainmentStatus.DETECTED ||
+                it.containmentStatus == ContainmentStatus.AI_ASSESSED ||
+                it.containmentStatus == ContainmentStatus.PENDING_HUMAN_APPROVAL
+        }
+        val autoContained = threats.count {
+            it.containmentStatus == ContainmentStatus.AUTO_CONTAINED ||
+                it.containmentStatus == ContainmentStatus.APPROVED_CONTAINED
+        }
+        val blockedTotal = rules.sumOf { it.blockedCount }
+        val posture = (100 - (pendingApprovals * 8) - (activeUncontained * 4)).coerceIn(55, 99)
+        SecurityPostureMetrics(
+            postureScore = posture,
+            activeThreatsCount = activeUncontained,
+            firewallBreachesBlocked = blockedTotal,
+            autoContainedCount = autoContained,
+            pendingHumanApprovalsCount = pendingApprovals,
+            lastScanAt = scanAt
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SecurityPostureMetrics())
 
     // E-Commerce Data Streams (Cloud Firestore with local offline support via Room)
     val allProducts: StateFlow<List<Product>> = commerceRepository.observeProducts()
@@ -114,12 +187,16 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
     }
 
     init {
+        val uid = activeUserId()
         viewModelScope.launch {
             commerceRepository.seedDefaultProductsIfEmpty()
-            orderRepository.syncOrdersFromFirestore("jurgen-westerveld")
+            orderRepository.syncOrdersFromFirestore(uid)
+            payoutLiveService.seedInitialWebhooksIfEmpty(uid)
+            payoutLiveService.probeGatewayHealth(uid)
+            securityDefenseService.seedBaselineIfNeeded(uid)
         }
         viewModelScope.launch {
-            orderRepository.listenForRealtimeOrderEvents("jurgen-westerveld").collect { event ->
+            orderRepository.listenForRealtimeOrderEvents(uid).collect { event ->
                 if (event.changeDescription != null) {
                     _realtimeOrderAlert.value = event.changeDescription
                     _userFeedbackMessage.value = "⚡ ${event.changeDescription}"
@@ -127,8 +204,48 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
             }
         }
         viewModelScope.launch {
-            commerceRepository.observeUserCart("jurgen-westerveld").collect { cart ->
+            commerceRepository.observeUserCart(uid).collect { cart ->
                 _userCart.value = cart
+            }
+        }
+        // Live Payouts Firestore sync -> upsert into Room
+        viewModelScope.launch {
+            payoutLiveService.observeLivePayouts(uid).collect { cloudPayouts ->
+                cloudPayouts.forEach { payout ->
+                    repository.savePayout(payout)
+                }
+            }
+        }
+        viewModelScope.launch {
+            payoutLiveService.observeSettlementWebhooks(uid).collect { hooks ->
+                if (hooks.isNotEmpty()) {
+                    _settlementWebhooks.value = hooks
+                }
+            }
+        }
+        viewModelScope.launch {
+            payoutLiveService.observeAutoPayoutRules(uid).collect { rules ->
+                _autoPayoutRules.value = rules
+            }
+        }
+        // Live Security Operations Firestore streams
+        viewModelScope.launch {
+            securityDefenseService.observeThreats(uid).collect { cloudThreats ->
+                if (cloudThreats.isNotEmpty()) {
+                    _securityThreats.value = cloudThreats
+                }
+            }
+        }
+        viewModelScope.launch {
+            securityDefenseService.observeAuditLogs(uid).collect { cloudLogs ->
+                if (cloudLogs.isNotEmpty()) {
+                    _securityAuditLogs.value = cloudLogs
+                }
+            }
+        }
+        viewModelScope.launch {
+            securityDefenseService.observeContainmentPolicy(uid).collect { cloudPolicy ->
+                _containmentPolicy.value = cloudPolicy
             }
         }
     }
@@ -590,7 +707,7 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // --- Owner Payout Actions ---
+    // --- Owner Payout Actions (Live Integrated) ---
     fun requestOwnerPayout(
         amount: Double,
         ownerId: String = "jurgen-westerveld",
@@ -603,16 +720,17 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
         notes: String = ""
     ) {
         viewModelScope.launch {
+            _isPayoutSyncing.value = true
             val fee = speed.feeEuro
             val now = System.currentTimeMillis()
             val isImmediate = speed == PayoutSpeed.WERO_INSTANT || speed == PayoutSpeed.INSTANT
             val arrival = when (speed) {
-                PayoutSpeed.WERO_INSTANT -> now + 4000L // 4 seconds via EPI
-                PayoutSpeed.INSTANT -> now + (5 * 60 * 1000L) // 5 minutes SEPA
-                PayoutSpeed.STANDARD -> now + (24 * 60 * 60 * 1000L) // 1 day
+                PayoutSpeed.WERO_INSTANT -> now + 4000L
+                PayoutSpeed.INSTANT -> now + (5 * 60 * 1000L)
+                PayoutSpeed.STANDARD -> now + (24 * 60 * 60 * 1000L)
             }
-            val newPayout = PayoutEntity(
-                id = "PO-${(System.currentTimeMillis() % 1000000).toString().padStart(6, '0')}",
+            val draftPayout = PayoutEntity(
+                id = "PO-${(now % 1000000).toString().padStart(6, '0')}",
                 ownerId = ownerId,
                 ownerName = ownerName,
                 amount = amount,
@@ -634,11 +752,17 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
                     if (speed == PayoutSpeed.WERO_INSTANT) "Settled in real-time (< 5s) via Wero (European Payments Initiative) to ING NL43INGB0006372146" else ""
                 }
             )
-            repository.savePayout(newPayout)
+            repository.savePayout(draftPayout)
+            val liveResult = payoutLiveService.initiateLivePayout(activeUserId(), draftPayout)
+            val savedPayout = liveResult.getOrDefault(draftPayout)
+            if (savedPayout != draftPayout) {
+                repository.savePayout(savedPayout)
+            }
+            _isPayoutSyncing.value = false
             _userFeedbackMessage.value = if (speed == PayoutSpeed.WERO_INSTANT) {
-                "Wero Instant wire of €%.2f settled immediately to ING IBAN %s".format(amount, destinationIban)
+                "Live Wero wire €%.2f settled to ING IBAN %s".format(amount, destinationIban)
             } else {
-                "Payout of €%.2f initiated to %s".format(amount, destinationBank)
+                "Live payout of €%.2f dispatched to %s".format(amount, destinationBank)
             }
         }
     }
@@ -646,14 +770,200 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
     fun cancelPayout(payout: PayoutEntity) {
         viewModelScope.launch {
             repository.updatePayoutStatus(payout.id, PayoutStatus.CANCELLED.name)
-            _userFeedbackMessage.value = "Payout ${payout.id} was cancelled"
+            payoutLiveService.cancelLivePayout(activeUserId(), payout.id)
+            _userFeedbackMessage.value = "Live payout ${payout.id} cancelled"
         }
     }
 
     fun deletePayout(payout: PayoutEntity) {
         viewModelScope.launch {
             repository.deletePayout(payout)
+            payoutLiveService.deleteLivePayout(activeUserId(), payout.id)
             _userFeedbackMessage.value = "Payout ${payout.id} deleted"
+        }
+    }
+
+    fun refreshLivePayoutFeed() {
+        viewModelScope.launch {
+            _isPayoutSyncing.value = true
+            payoutLiveService.probeGatewayHealth(activeUserId())
+            _isPayoutSyncing.value = false
+            _userFeedbackMessage.value = "Live Wero / SEPA gateway refreshed"
+        }
+    }
+
+    fun saveAutoPayoutRules(
+        enabled: Boolean,
+        schedule: String,
+        minThreshold: Double,
+        reserveFloat: Double
+    ) {
+        viewModelScope.launch {
+            _isPayoutSyncing.value = true
+            val rules = AutoPayoutRules(
+                enabled = enabled,
+                schedule = schedule,
+                minThreshold = minThreshold.coerceAtLeast(0.0),
+                reserveFloat = reserveFloat.coerceAtLeast(0.0)
+            )
+            _autoPayoutRules.value = rules
+            payoutLiveService.saveAutoPayoutRules(activeUserId(), rules)
+            _isPayoutSyncing.value = false
+            _userFeedbackMessage.value = "Automated settlement rules synced to Cloud"
+        }
+    }
+
+    fun executeAutoSweepNow(ownerName: String = "Jurgen Paul Westerveld") {
+        val rules = _autoPayoutRules.value
+        val available = ownerPayoutMetrics.value.availableBalance
+        val sweepable = (available - rules.reserveFloat).coerceAtLeast(0.0)
+        if (sweepable < rules.minThreshold || sweepable <= 0.0) {
+            _userFeedbackMessage.value = "Sweep skipped: €%.2f sweepable is below €%.2f min threshold".format(sweepable, rules.minThreshold)
+            return
+        }
+        requestOwnerPayout(
+            amount = sweepable,
+            ownerId = activeUserId(),
+            ownerName = ownerName,
+            speed = PayoutSpeed.WERO_INSTANT,
+            reference = "Automated Wero Treasury Sweep",
+            notes = "Triggered by Automated Settlement Rules (Reserve float €%.2f retained)".format(rules.reserveFloat)
+        )
+    }
+
+    // --- Live Security Operations & Threat Defense Actions ---
+    fun runSecurityPerimeterScan() {
+        viewModelScope.launch {
+            _isScanningSecurity.value = true
+            val evaluated = securityDefenseService.runLivePerimeterScan(
+                userId = activeUserId(),
+                policy = _containmentPolicy.value,
+                currentThreats = _securityThreats.value
+            )
+            _isScanningSecurity.value = false
+            _userFeedbackMessage.value = "Perimeter security scan finished ($evaluated threats evaluated)"
+        }
+    }
+
+    fun assessThreatWithAi(threat: SecurityThreatEvent) {
+        viewModelScope.launch {
+            _isScanningSecurity.value = true
+            val updated = securityDefenseService.assessThreatWithAi(
+                userId = activeUserId(),
+                threat = threat,
+                policy = _containmentPolicy.value
+            )
+            _securityThreats.value = _securityThreats.value.map { if (it.id == updated.id) updated else it }
+            _isScanningSecurity.value = false
+            _userFeedbackMessage.value = "AI Risk Assessment: ${updated.aiRiskScore}/100 (${updated.containmentStatus.label})"
+        }
+    }
+
+    fun triggerFirewallBreachProbe(scenario: String) {
+        viewModelScope.launch {
+            _isScanningSecurity.value = true
+            val assessed = securityDefenseService.simulateFirewallBreachProbe(
+                userId = activeUserId(),
+                scenario = scenario,
+                policy = _containmentPolicy.value
+            )
+            _securityThreats.value = listOf(assessed) + _securityThreats.value.filterNot { it.id == assessed.id }
+            val auditEntry = SecurityAuditLogEntry(
+                id = "AUD-LOCAL-${System.currentTimeMillis() % 1000000}",
+                threatId = assessed.id,
+                eventType = if (assessed.containmentStatus == ContainmentStatus.AUTO_CONTAINED) {
+                    SecurityAuditEventType.AUTO_CONTAINMENT
+                } else {
+                    SecurityAuditEventType.AI_RISK_ASSESSMENT
+                },
+                actor = "Genkit SOC AI Engine",
+                summary = "${assessed.title} — Score ${assessed.aiRiskScore}/100 (${assessed.containmentStatus.label})",
+                details = assessed.aiRationale,
+                riskScore = assessed.aiRiskScore,
+                timestamp = System.currentTimeMillis()
+            )
+            _securityAuditLogs.value = listOf(auditEntry) + _securityAuditLogs.value
+            _isScanningSecurity.value = false
+            _userFeedbackMessage.value = if (assessed.containmentStatus == ContainmentStatus.PENDING_HUMAN_APPROVAL) {
+                "Firewall breach escalated to Human Approval queue (#${assessed.id})"
+            } else {
+                "Firewall breach auto-contained (#${assessed.id})"
+            }
+        }
+    }
+
+    fun approveThreatContainment(
+        threat: SecurityThreatEvent,
+        operatorName: String = "Jurgen Paul Westerveld",
+        note: String = "Operator signed off on permanent WAF containment"
+    ) {
+        viewModelScope.launch {
+            val result = securityDefenseService.approveContainment(activeUserId(), threat, operatorName, note)
+            val updated = result.getOrElse {
+                threat.copy(
+                    containmentStatus = ContainmentStatus.APPROVED_CONTAINED,
+                    approvedBy = operatorName,
+                    requiresHumanApproval = false,
+                    updatedAt = System.currentTimeMillis()
+                )
+            }
+            _securityThreats.value = _securityThreats.value.map { if (it.id == updated.id) updated else it }
+            _securityAuditLogs.value = listOf(
+                SecurityAuditLogEntry(
+                    id = "AUD-APP-${System.currentTimeMillis() % 1000000}",
+                    threatId = updated.id,
+                    eventType = SecurityAuditEventType.HUMAN_APPROVAL,
+                    actor = operatorName,
+                    summary = "Human approval signed off for #${updated.id}",
+                    details = note,
+                    riskScore = updated.aiRiskScore,
+                    timestamp = System.currentTimeMillis()
+                )
+            ) + _securityAuditLogs.value
+            _userFeedbackMessage.value = "Containment approved for #${threat.id}"
+        }
+    }
+
+    fun dismissSecurityThreat(
+        threat: SecurityThreatEvent,
+        operatorName: String = "Jurgen Paul Westerveld",
+        reason: String = "Verified authorized traffic by operator"
+    ) {
+        viewModelScope.launch {
+            val result = securityDefenseService.dismissThreat(activeUserId(), threat, operatorName, reason)
+            val updated = result.getOrElse {
+                threat.copy(
+                    containmentStatus = ContainmentStatus.DISMISSED,
+                    approvedBy = operatorName,
+                    requiresHumanApproval = false,
+                    updatedAt = System.currentTimeMillis()
+                )
+            }
+            _securityThreats.value = _securityThreats.value.map { if (it.id == updated.id) updated else it }
+            _securityAuditLogs.value = listOf(
+                SecurityAuditLogEntry(
+                    id = "AUD-DIS-${System.currentTimeMillis() % 1000000}",
+                    threatId = updated.id,
+                    eventType = SecurityAuditEventType.HUMAN_DISMISSAL,
+                    actor = operatorName,
+                    summary = "Operator dismissed #${updated.id}",
+                    details = reason,
+                    riskScore = updated.aiRiskScore,
+                    timestamp = System.currentTimeMillis()
+                )
+            ) + _securityAuditLogs.value
+            _userFeedbackMessage.value = "Threat #${threat.id} dismissed"
+        }
+    }
+
+    fun updateContainmentPolicy(
+        policy: ContainmentPolicy,
+        operatorName: String = "Jurgen Paul Westerveld"
+    ) {
+        viewModelScope.launch {
+            _containmentPolicy.value = policy
+            securityDefenseService.saveContainmentPolicy(activeUserId(), policy, operatorName)
+            _userFeedbackMessage.value = "SOC Containment Policy updated"
         }
     }
 

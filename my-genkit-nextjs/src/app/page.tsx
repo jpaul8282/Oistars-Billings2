@@ -88,7 +88,32 @@ export default function Home() {
         doc.setFontSize(10);
         doc.setTextColor(31, 41, 55);
         doc.text(`Servings: ${recipe.servings} people`, margin, y);
-        y += 8;
+        y += 7;
+      }
+
+      // Nutritional Summary Section
+      if (recipe.nutritionalSummary) {
+        const ns = recipe.nutritionalSummary;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.setTextColor(17, 24, 39);
+        doc.text('NUTRITIONAL SUMMARY (PER SERVING)', margin, y);
+        y += 5.5;
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.setTextColor(55, 65, 81);
+        const macroLine = [
+          ns.calories !== undefined ? `Calories: ${Math.round(ns.calories)} kcal` : null,
+          ns.protein !== undefined ? `Protein: ${Math.round(ns.protein)} g` : null,
+          ns.carbs !== undefined ? `Carbs: ${Math.round(ns.carbs)} g` : null,
+        ]
+          .filter(Boolean)
+          .join('   |   ');
+        if (macroLine) {
+          doc.text(macroLine, margin, y);
+          y += 8;
+        }
       }
 
       // Ingredients Section
@@ -156,7 +181,7 @@ export default function Home() {
       }
 
       // Footer
-      const totalPages = doc.internal.getNumberOfPages();
+      const totalPages = doc.getNumberOfPages();
       for (let i = 1; i <= totalPages; i++) {
         doc.setPage(i);
         doc.setFont('helvetica', 'normal');
@@ -239,6 +264,38 @@ export default function Home() {
 
           {recipe.description && (
             <p className="description">{recipe.description}</p>
+          )}
+
+          {recipe.nutritionalSummary && (
+            <section className="nutrition-section" aria-label="Nutritional Summary">
+              <h3>Nutritional Summary (Estimated per serving)</h3>
+              <div className="nutrition-grid">
+                <div className="nutrition-stat">
+                  <span className="nutrition-value">
+                    {recipe.nutritionalSummary.calories !== undefined
+                      ? `${Math.round(recipe.nutritionalSummary.calories)}`
+                      : '—'}
+                  </span>
+                  <span className="nutrition-label">Calories (kcal)</span>
+                </div>
+                <div className="nutrition-stat">
+                  <span className="nutrition-value">
+                    {recipe.nutritionalSummary.protein !== undefined
+                      ? `${Math.round(recipe.nutritionalSummary.protein)}g`
+                      : '—'}
+                  </span>
+                  <span className="nutrition-label">Protein</span>
+                </div>
+                <div className="nutrition-stat">
+                  <span className="nutrition-value">
+                    {recipe.nutritionalSummary.carbs !== undefined
+                      ? `${Math.round(recipe.nutritionalSummary.carbs)}g`
+                      : '—'}
+                  </span>
+                  <span className="nutrition-label">Carbs</span>
+                </div>
+              </div>
+            </section>
           )}
 
           {recipe.ingredients && recipe.ingredients.length > 0 && (

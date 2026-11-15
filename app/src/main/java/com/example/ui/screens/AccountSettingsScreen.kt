@@ -93,6 +93,8 @@ fun AccountSettingsScreen(
     onToggleDarkTheme: (Boolean) -> Unit,
     onLogout: () -> Unit,
     onNavigateToPayouts: (() -> Unit)? = null,
+    onNavigateToSecurityCenter: (() -> Unit)? = null,
+    pendingSecurityAlertsCount: Int = 0,
     onSyncToCloud: (() -> Unit)? = null,
     syncStatusMessage: String? = null,
     modifier: Modifier = Modifier
@@ -525,6 +527,20 @@ fun AccountSettingsScreen(
                     checked = biometricLock,
                     onCheckedChange = { biometricLock = it }
                 )
+
+                if (onNavigateToSecurityCenter != null) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+
+                    SettingsNavRow(
+                        icon = Icons.Default.Security,
+                        title = if (pendingSecurityAlertsCount > 0) {
+                            "Security Operations & Threat Defense ($pendingSecurityAlertsCount Alerts)"
+                        } else {
+                            "Security Operations & Threat Defense"
+                        },
+                        onClick = onNavigateToSecurityCenter
+                    )
+                }
             }
         }
 

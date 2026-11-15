@@ -214,10 +214,18 @@ const BargainChefInputSchema = z.object({
   craving: z.string().describe("What the user feels like eating right now."),
 });
 
+const NutritionalSummarySchema = z.object({
+  calories: z.number().describe("Estimated calories per serving (kcal)."),
+  protein: z.number().describe("Estimated protein per serving in grams."),
+  carbs: z.number().describe("Estimated carbohydrates per serving in grams."),
+  fat: z.number().optional().describe("Estimated fat per serving in grams."),
+});
+
 const RecipeSchema = z.object({
   title: z.string(),
   description: z.string(),
   servings: z.number(),
+  nutritionalSummary: NutritionalSummarySchema,
   ingredients: z.array(
     z.object({
       name: z.string(),
@@ -229,12 +237,17 @@ const RecipeSchema = z.object({
 });
 
 function buildLocalBargainRecipe(craving, isWeekend) {
-  const c = (craving || "something warm and delicious").toLowerCase();
   if (isWeekend) {
     return {
       title: "Rustic Garlic Chicken & Tomato Pasta",
       description: `A comforting weekend recipe inspired by your craving for '${craving}', highlighting discounted chicken breast, garlic, and simmered canned tomatoes.`,
       servings: 4,
+      nutritionalSummary: {
+        calories: 540,
+        protein: 42,
+        carbs: 58,
+        fat: 14
+      },
       ingredients: [
         { name: "chicken breast", quantity: "1.5 lbs (diced)", onSale: true },
         { name: "pasta", quantity: "1 box (16 oz)", onSale: true },
@@ -257,6 +270,12 @@ function buildLocalBargainRecipe(craving, isWeekend) {
       title: "Golden Lemon-Butter Rice with Sautéed Spinach & Crispy Eggs",
       description: `A vibrant, budget-friendly weekday skillet built for your craving: '${craving}', taking advantage of store deals on fresh spinach, eggs, and butter.`,
       servings: 2,
+      nutritionalSummary: {
+        calories: 485,
+        protein: 21,
+        carbs: 44,
+        fat: 24
+      },
       ingredients: [
         { name: "eggs", quantity: "3 to 4 large eggs", onSale: true },
         { name: "spinach", quantity: "5 oz fresh leaves", onSale: true },
@@ -292,7 +311,7 @@ const bargainChefFlow = ai.defineFlow(
         const response = await ai.generate({
           prompt: `Today is ${today}. The user is craving: ${craving}.
 
-Call the getIngredientsOnSale tool with the dayType that matches today. Saturday and Sunday are weekends; all other days are weekdays. Then propose ONE delicious recipe that takes advantage of those deals. For each ingredient, set onSale=true if it appears in the tool's response, false otherwise.`,
+Call the getIngredientsOnSale tool with the dayType that matches today. Saturday and Sunday are weekends; all other days are weekdays. Then propose ONE delicious recipe that takes advantage of those deals. For each ingredient, set onSale=true if it appears in the tool's response, false otherwise. Also calculate nutritionalSummary (calories in kcal, protein in grams, carbs in grams per serving).`,
           tools: [getIngredientsOnSale],
           output: { schema: RecipeSchema },
         });
@@ -345,6 +364,123 @@ const imageGeneratorFlow = ai.defineFlow(
   },
 );
 
+/**
+ * 4. Security Risk Assessment Flow (Threat Detection, Firewall Breach & Containment)
+ */
+const SecurityRiskInputSchema = z.object({
+  threatId: z.string(),
+  title: z.string(),
+  breachType: z.string(),
+  sourceIp: z.string(),
+  targetEndpoint: z.string(),
+  firewallRuleMatched: z.string(),
+  severity: z.string(),
+  description: z.string().optional(),
+});
+
+const SecurityRiskAssessmentSchema = z.object({
+  riskScore: z.number(),
+  riskLevel: z.enum(["CRITICAL", "HIGH", "MODERATE", "LOW"]),
+  attackVector: z.string(),
+  blastRadius: z.string(),
+  recommendedAction: z.string(),
+  requiresHumanApproval: z.boolean(),
+  aiRationale: z.string(),
+});
+
+function buildDeterministicRiskAssessment(input) {
+  const sev = (input.severity || "HIGH").toUpperCase();
+  const breach = (input.breachType || "").toUpperCase();
+  let riskScore = 72;
+  let riskLevel = "HIGH";
+  let attackVector = "Network Perimeter Intrusion";
+  let blastRadius = "Targeted API Endpoint";
+  let recommendedAction = "BLOCK_SOURCE_IP_AND_RATE_LIMIT";
+  let requiresHumanApproval = false;
+
+  if (sev === "CRITICAL" || breach.includes("PAYOUT") || breach.includes("HMAC") || breach.includes("PRIVILEGE")) {
+    riskScore = 94;
+    riskLevel = "CRITICAL";
+    attackVector = "Financial Settlement & Webhook Forgery Probe";
+    blastRadius = "Wero / SEPA Disbursement Channel & Treasury Ledger";
+    recommendedAction = "ISOLATE_PAYOUT_CHANNEL_PENDING_OPERATOR_SIGNOFF";
+    requiresHumanApproval = true;
+  } else if (sev === "HIGH" || breach.includes("BRUTE") || breach.includes("INJECTION")) {
+    riskScore = 84;
+    riskLevel = "HIGH";
+    attackVector = "Automated Credential / Payload Injection";
+    blastRadius = "Authentication Gateway & Edge Firewall";
+    recommendedAction = "AUTO_BLOCK_IP_IN_WAF_AND_REVOKE_SESSION";
+    requiresHumanApproval = false;
+  } else if (sev === "MEDIUM") {
+    riskScore = 58;
+    riskLevel = "MODERATE";
+    attackVector = "Anomalous API Scanning";
+    blastRadius = "Public Metadata Endpoints";
+    recommendedAction = "THROTTLE_IP_AND_MONITOR";
+    requiresHumanApproval = false;
+  } else {
+    riskScore = 28;
+    riskLevel = "LOW";
+    attackVector = "Telemetry Probe / Port Sweep";
+    blastRadius = "Edge Load Balancer Only";
+    recommendedAction = "LOG_AND_OBSERVE";
+    requiresHumanApproval = false;
+  }
+
+  return {
+    riskScore,
+    riskLevel,
+    attackVector,
+    blastRadius,
+    recommendedAction,
+    requiresHumanApproval,
+    aiRationale: `Evaluated ${input.breachType} from ${input.sourceIp} targeting ${input.targetEndpoint} (Rule: ${input.firewallRuleMatched}). Risk score ${riskScore}/100 assigned based on endpoint sensitivity and payload signature.`
+  };
+}
+
+const securityRiskAssessmentFlow = ai.defineFlow(
+  {
+    name: "securityRiskAssessmentFlow",
+    inputSchema: SecurityRiskInputSchema,
+    outputSchema: SecurityRiskAssessmentSchema,
+  },
+  async (input) => {
+    if (apiKey) {
+      try {
+        const response = await ai.generate({
+          prompt: `You are an autonomous SOC (Security Operations Center) AI analyst protecting Oistars Billings (a European B2B billing and Wero/SEPA treasury app).
+Analyze this detected security threat and firewall breach event:
+- Threat ID: ${input.threatId}
+- Title: ${input.title}
+- Breach Type: ${input.breachType}
+- Source IP: ${input.sourceIp}
+- Target Endpoint: ${input.targetEndpoint}
+- Firewall Rule Matched: ${input.firewallRuleMatched}
+- Initial Severity: ${input.severity}
+- Description: ${input.description || "N/A"}
+
+Provide an accurate AI risk assessment:
+- riskScore: integer 0-100
+- riskLevel: CRITICAL, HIGH, MODERATE, or LOW
+- attackVector: concise technical classification
+- blastRadius: systems potentially impacted
+- recommendedAction: concrete containment command/action
+- requiresHumanApproval: true if riskLevel is CRITICAL or affects treasury/payout channels, false if safe for autonomous containment
+- aiRationale: 2-sentence justification.`,
+          output: { schema: SecurityRiskAssessmentSchema },
+        });
+        if (response.output) {
+          return response.output;
+        }
+      } catch (err) {
+        console.warn("[Genkit securityRiskAssessmentFlow] Falling back to deterministic engine:", err.message);
+      }
+    }
+    return buildDeterministicRiskAssessment(input);
+  },
+);
+
 module.exports = {
   ai,
   helloFlow,
@@ -352,6 +488,7 @@ module.exports = {
   getIngredientsOnSale,
   bargainChefFlow,
   imageGeneratorFlow,
+  securityRiskAssessmentFlow,
   BargainChefInputSchema,
   RecipeSchema,
 };

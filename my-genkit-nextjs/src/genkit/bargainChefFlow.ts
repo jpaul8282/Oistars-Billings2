@@ -47,10 +47,20 @@ const BargainChefInputSchema = z.object({
   craving: z.string().describe('What the user feels like eating right now.'),
 });
 
+const NutritionalSummarySchema = z.object({
+  calories: z.number().describe('Estimated calories per serving in kcal.'),
+  protein: z.number().describe('Estimated protein per serving in grams.'),
+  carbs: z.number().describe('Estimated carbohydrates per serving in grams.'),
+  fat: z.number().optional().describe('Estimated fat per serving in grams.'),
+});
+
 const RecipeSchema = z.object({
   title: z.string(),
   description: z.string(),
   servings: z.number(),
+  nutritionalSummary: NutritionalSummarySchema.describe(
+    'Estimated nutritional summary per serving (calories, protein, carbs).',
+  ),
   ingredients: z.array(
     z.object({
       name: z.string(),
@@ -63,6 +73,7 @@ const RecipeSchema = z.object({
 
 // Exported for the frontend to import as types.
 export type BargainChefInput = z.infer<typeof BargainChefInputSchema>;
+export type NutritionalSummary = z.infer<typeof NutritionalSummarySchema>;
 export type Recipe = z.infer<typeof RecipeSchema>;
 export type PartialRecipe = Partial<Recipe>;
 
@@ -83,7 +94,7 @@ export const bargainChefFlow = ai.defineFlow(
       }),
       prompt: `Today is ${today}. The user is craving: ${craving}.
 
-Call the getIngredientsOnSale tool with the dayType that matches today. Saturday and Sunday are weekends; all other days are weekdays. Then propose ONE recipe that takes advantage of those deals. For each ingredient, set onSale=true if it appears in the tool's response, false otherwise.`,
+Call the getIngredientsOnSale tool with the dayType that matches today. Saturday and Sunday are weekends; all other days are weekdays. Then propose ONE recipe that takes advantage of those deals. For each ingredient, set onSale=true if it appears in the tool's response, false otherwise. Also calculate and populate nutritionalSummary with realistic per-serving estimates for calories (kcal), protein (grams), carbs (grams), and fat (grams) based on the ingredient quantities and servings.`,
       tools: [getIngredientsOnSale],
       output: { schema: RecipeSchema },
     });

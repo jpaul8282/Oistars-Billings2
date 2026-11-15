@@ -90,6 +90,9 @@ import com.example.data.local.PayoutEntity
 import com.example.data.local.PayoutSpeed
 import com.example.data.local.PayoutStatus
 import com.example.data.model.Order
+import com.example.data.service.AutoPayoutRules
+import com.example.data.service.PayoutGatewayStatus
+import com.example.data.service.SettlementWebhookEvent
 import com.example.ui.components.Formatters
 import com.example.ui.theme.AccentGold
 import com.example.ui.theme.NavyDark
@@ -108,6 +111,10 @@ fun OwnerPayoutScreen(
     payouts: List<PayoutEntity>,
     orders: List<Order> = emptyList(),
     invoices: List<InvoiceEntity> = emptyList(),
+    gatewayStatus: PayoutGatewayStatus = PayoutGatewayStatus(),
+    settlementWebhooks: List<SettlementWebhookEvent> = emptyList(),
+    autoPayoutRules: AutoPayoutRules = AutoPayoutRules(),
+    isPayoutSyncing: Boolean = false,
     onRequestPayout: (
         amount: Double,
         ownerId: String,
@@ -122,6 +129,9 @@ fun OwnerPayoutScreen(
     onCancelPayout: (PayoutEntity) -> Unit,
     onDeletePayout: (PayoutEntity) -> Unit,
     onSyncPayouts: (() -> Unit)? = null,
+    onRefreshLiveFeed: () -> Unit = {},
+    onSaveAutoPayoutRules: (enabled: Boolean, schedule: String, minThreshold: Double, reserveFloat: Double) -> Unit = { _, _, _, _ -> },
+    onExecuteAutoSweepNow: () -> Unit = {},
     syncStatusMessage: String? = null,
     ownerName: String = "Jurgen Paul Westerveld",
     ownerEmail: String = "westerveldjp@gmail.com",
@@ -131,11 +141,11 @@ fun OwnerPayoutScreen(
     var selectedPayoutForDetail by remember { mutableStateOf<PayoutEntity?>(null) }
     var selectedStatusFilter by remember { mutableStateOf("ALL") }
 
-    // Auto payout configuration states
-    var autoPayoutEnabled by remember { mutableStateOf(true) }
-    var autoPayoutSchedule by remember { mutableStateOf("Weekly (Every Friday at 17:00 CET)") }
-    var minThreshold by remember { mutableStateOf("500.00") }
-    var reserveAmount by remember { mutableStateOf("250.00") }
+    // Auto payout configuration states synced with Cloud Firestore rules
+    var autoPayoutEnabled by remember(autoPayoutRules) { mutableStateOf(autoPayoutRules.enabled) }
+    var autoPayoutSchedule by remember(autoPayoutRules) { mutableStateOf(autoPayoutRules.schedule) }
+    var minThreshold by remember(autoPayoutRules) { mutableStateOf("%.2f".format(Locale.US, autoPayoutRules.minThreshold)) }
+    var reserveAmount by remember(autoPayoutRules) { mutableStateOf("%.2f".format(Locale.US, autoPayoutRules.reserveFloat)) }
     var scheduleExpanded by remember { mutableStateOf(false) }
     val schedules = listOf(
         "Instant on Clearance",
@@ -167,6 +177,15 @@ fun OwnerPayoutScreen(
         contentPadding = PaddingValues(vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Live Gateway Health Strip
+        item {
+            LivePayoutGatewayStrip(
+                gatewayStatus = gatewayStatus,
+                isSyncing = isPayoutSyncing,
+                onRefreshFeed = onRefreshLiveFeed
+            )
+        }
+
         // Section 1: Owner Profile & Verified Settlement Account Card
         item {
             Card(
@@ -640,8 +659,55 @@ fun OwnerPayoutScreen(
                             )
                         }
                     }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                onSaveAutoPayoutRules(
+                                    autoPayoutEnabled,
+                                    autoPayoutSchedule,
+                                    minThreshold.toDoubleOrNull() ?: 500.0,
+                                    reserveAmount.toDoubleOrNull() ?: 250.0
+                                )
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = OceanBlue),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .testTag("btn_save_auto_payout_rules")
+                        ) {
+                            Icon(Icons.Default.CloudDone, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Save Rules", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = onExecuteAutoSweepNow,
+                            enabled = autoPayoutEnabled && !isPayoutSyncing,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .testTag("btn_execute_auto_sweep")
+                        ) {
+                            Icon(Icons.Default.Bolt, contentDescription = null, tint = AccentGold, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Auto-Sweep", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
                 }
             }
+        }
+
+        // Section 3B: Live Wero / SEPA Settlement Webhook Stream
+        item {
+            LiveSettlementWebhookFeedCard(
+                webhooks = settlementWebhooks
+            )
         }
 
         // Section 4: Payout History Header & Filter Chips

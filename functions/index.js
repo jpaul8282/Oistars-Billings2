@@ -263,11 +263,10 @@ app.get("/api/revenue/monthly-trend", async (req, res) => {
 // Wero / SEPA Instant Settlement Webhook
 app.post("/api/webhooks/wero", async (req, res) => {
   try {
-    const { transactionRef, amount, currency, iban, status } = req.body;
+    const { userId = "jurgen-westerveld", transactionRef, amount, currency, iban, status } = req.body;
     console.log(`[Wero Webhook] Received settlement notification for ${transactionRef}: €${amount}`);
 
-    // Record webhook event in owner settlement ledger
-    await db.collection("settlement_webhooks").add({
+    const webhookEvent = {
       provider: "WERO_EPI",
       transactionRef: transactionRef || `WERO-${Date.now()}`,
       amount: Number(amount) || 0,
@@ -275,9 +274,15 @@ app.post("/api/webhooks/wero", async (req, res) => {
       iban: iban || "NL43 INGB 0006 3721 46",
       status: status || "SETTLED",
       receivedAt: Date.now()
-    });
+    };
 
-    return res.json({ received: true, status: "PROCESSED" });
+    // Record webhook event in both owner settlement ledger and user-scoped feed
+    await Promise.all([
+      db.collection("settlement_webhooks").add(webhookEvent),
+      db.collection("users").doc(userId).collection("settlement_webhooks").add(webhookEvent)
+    ]);
+
+    return res.json({ received: true, status: "PROCESSED", event: webhookEvent });
   } catch (error) {
     console.error("Error processing Wero webhook:", error);
     return res.status(500).json({ error: error.message });
@@ -288,7 +293,245 @@ app.post("/api/webhooks/wero", async (req, res) => {
 // 3. GENKIT SERVER-SIDE AI FLOWS (Keeps API key securely on backend)
 // =========================================================================
 
-const { helloFlow, generateInvoiceCommunicationFlow, bargainChefFlow, imageGeneratorFlow } = require("./genkit-flow");
+const {
+  helloFlow,
+  generateInvoiceCommunicationFlow,
+  bargainChefFlow,
+  imageGeneratorFlow,
+  securityRiskAssessmentFlow,
+} = require("./genkit-flow");
+
+// =========================================================================
+// 4. LIVE PAYOUT SETTLEMENT & AUTOMATED RULES API
+// =========================================================================
+
+app.post("/api/payouts/initiate", async (req, res) => {
+  try {
+    const {
+      userId = "jurgen-westerveld",
+      ownerName = "Jurgen Paul Westerveld",
+      amount,
+      currency = "EUR",
+      destinationBank = "ING Bank N.V.",
+      destinationIban = "NL43 INGB 0006 3721 46",
+      destinationBic = "INGBNL2A",
+      speed = "WERO_INSTANT",
+      reference = "Owner Draw / Live Settlement",
+      notes = ""
+    } = req.body || {};
+
+    const numericAmount = Number(amount);
+    if (!numericAmount || numericAmount <= 0) {
+      return res.status(400).json({ error: "Valid positive payout amount is required." });
+    }
+
+    const now = Date.now();
+    const payoutId = `PO-${String(now % 1000000).padStart(6, "0")}`;
+    const isImmediate = speed === "WERO_INSTANT" || speed === "INSTANT";
+    const status = isImmediate ? "COMPLETED" : "PROCESSING";
+    const arrival = speed === "WERO_INSTANT"
+      ? now + 4000
+      : speed === "INSTANT"
+        ? now + 300000
+        : now + 86400000;
+
+    const payoutRecord = {
+      id: payoutId,
+      ownerId: userId,
+      ownerName,
+      amount: numericAmount,
+      currency,
+      fee: 0.0,
+      netAmount: numericAmount,
+      status,
+      destinationBank,
+      destinationIban,
+      destinationBic,
+      payoutSpeed: speed,
+      reference,
+      initiatedAt: now,
+      estimatedArrivalAt: arrival,
+      completedAt: isImmediate ? now : null,
+      notes: notes || `Live ${speed} settlement via Oistars Gateway`,
+      gatewayTxRef: `GW-${now}`
+    };
+
+    await db.collection("users").doc(userId).collection("payouts").doc(payoutId).set(payoutRecord, { merge: true });
+
+    const webhookRecord = {
+      provider: speed === "WERO_INSTANT" ? "WERO_EPI_LIVE" : "SEPA_INST_GATEWAY",
+      transactionRef: payoutId,
+      amount: numericAmount,
+      currency,
+      iban: destinationIban,
+      status: isImmediate ? "SETTLED" : "DISPATCHED",
+      receivedAt: now
+    };
+
+    await Promise.all([
+      db.collection("settlement_webhooks").add(webhookRecord),
+      db.collection("users").doc(userId).collection("settlement_webhooks").add(webhookRecord)
+    ]);
+
+    return res.status(201).json({
+      success: true,
+      payout: payoutRecord,
+      webhook: webhookRecord,
+      message: `Live payout ${payoutId} (${status}) processed`
+    });
+  } catch (error) {
+    console.error("Error initiating live payout:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/payouts/live-feed", async (req, res) => {
+  try {
+    const userId = req.query.userId || "jurgen-westerveld";
+    const [payoutsSnap, webhooksSnap, rulesDoc] = await Promise.all([
+      db.collection("users").doc(userId).collection("payouts").orderBy("initiatedAt", "desc").limit(25).get(),
+      db.collection("users").doc(userId).collection("settlement_webhooks").orderBy("receivedAt", "desc").limit(15).get(),
+      db.collection("users").doc(userId).collection("settings").doc("payout_rules").get()
+    ]);
+
+    return res.json({
+      success: true,
+      gatewayOnline: true,
+      timestamp: Date.now(),
+      payouts: payoutsSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+      webhooks: webhooksSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+      rules: rulesDoc.exists ? rulesDoc.data() : null
+    });
+  } catch (error) {
+    console.error("Error loading live payout feed:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/payouts/rules", async (req, res) => {
+  try {
+    const {
+      userId = "jurgen-westerveld",
+      enabled = true,
+      schedule = "Weekly (Every Friday at 17:00 CET)",
+      minThreshold = 500.0,
+      reserveFloat = 250.0
+    } = req.body || {};
+
+    const payload = {
+      enabled: Boolean(enabled),
+      schedule,
+      minThreshold: Number(minThreshold) || 0,
+      reserveFloat: Number(reserveFloat) || 0,
+      updatedAt: Date.now()
+    };
+
+    await db.collection("users").doc(userId).collection("settings").doc("payout_rules").set(payload, { merge: true });
+    return res.json({ success: true, rules: payload });
+  } catch (error) {
+    console.error("Error saving payout rules:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// =========================================================================
+// 5. LIVE THREAT DETECTION, FIREWALL, AI RISK & CONTAINMENT ENDPOINTS
+// =========================================================================
+
+app.post("/api/security/assess-risk", async (req, res) => {
+  try {
+    const input = req.body || {};
+    const threatId = input.threatId || `THR-${Date.now() % 100000}`;
+    const userId = input.userId || "jurgen-westerveld";
+
+    const assessment = await securityRiskAssessmentFlow({
+      threatId,
+      title: input.title || "Suspicious Perimeter Anomaly",
+      breachType: input.breachType || "FIREWALL_ANOMALY",
+      sourceIp: input.sourceIp || "185.220.101.42",
+      targetEndpoint: input.targetEndpoint || "/api/webhooks/wero",
+      firewallRuleMatched: input.firewallRuleMatched || "WAF-EDGE-01",
+      severity: input.severity || "HIGH",
+      description: input.description || ""
+    });
+
+    const autoContainThreshold = Number(input.autoContainThreshold || 80);
+    const shouldAutoContain = assessment.riskScore >= autoContainThreshold && !assessment.requiresHumanApproval;
+    const containmentStatus = assessment.requiresHumanApproval
+      ? "PENDING_HUMAN_APPROVAL"
+      : shouldAutoContain
+        ? "AUTO_CONTAINED"
+        : "AI_ASSESSED";
+
+    const now = Date.now();
+    await db.collection("users").doc(userId).collection("security_threats").doc(threatId).set({
+      id: threatId,
+      aiRiskScore: assessment.riskScore,
+      aiRiskLevel: assessment.riskLevel,
+      aiAttackVector: assessment.attackVector,
+      aiBlastRadius: assessment.blastRadius,
+      aiRecommendedAction: assessment.recommendedAction,
+      aiRationale: assessment.aiRationale,
+      requiresHumanApproval: assessment.requiresHumanApproval,
+      containmentStatus,
+      updatedAt: now
+    }, { merge: true });
+
+    await db.collection("users").doc(userId).collection("security_audit_logs").add({
+      threatId,
+      eventType: shouldAutoContain ? "AUTO_CONTAINMENT" : "AI_RISK_ASSESSMENT",
+      actor: "Genkit SOC AI Engine",
+      summary: `AI Risk Score ${assessment.riskScore}/100 (${assessment.riskLevel}) - ${containmentStatus}`,
+      details: assessment.aiRationale,
+      riskScore: assessment.riskScore,
+      timestamp: now
+    });
+
+    return res.json({ success: true, threatId, containmentStatus, assessment });
+  } catch (error) {
+    console.error("Error executing securityRiskAssessmentFlow:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/security/approve", async (req, res) => {
+  try {
+    const {
+      userId = "jurgen-westerveld",
+      threatId,
+      decision = "APPROVE",
+      operator = "Jurgen Paul Westerveld",
+      note = ""
+    } = req.body || {};
+
+    if (!threatId) {
+      return res.status(400).json({ error: "threatId is required" });
+    }
+
+    const now = Date.now();
+    const newStatus = decision === "DISMISS" ? "DISMISSED" : "APPROVED_CONTAINED";
+    await db.collection("users").doc(userId).collection("security_threats").doc(threatId).set({
+      containmentStatus: newStatus,
+      approvedBy: operator,
+      updatedAt: now
+    }, { merge: true });
+
+    await db.collection("users").doc(userId).collection("security_audit_logs").add({
+      threatId,
+      eventType: decision === "DISMISS" ? "HUMAN_DISMISSAL" : "HUMAN_APPROVAL",
+      actor: operator,
+      summary: `${decision === "DISMISS" ? "Dismissed" : "Approved containment for"} threat #${threatId}`,
+      details: note || `Operator signed off on ${newStatus}`,
+      riskScore: 0,
+      timestamp: now
+    });
+
+    return res.json({ success: true, threatId, containmentStatus: newStatus });
+  } catch (error) {
+    console.error("Error processing security approval:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
 
 // REST Endpoints for Genkit AI flows
 app.post("/api/ai/hello", async (req, res) => {
@@ -357,6 +600,10 @@ exports.bargainChefFlow = functions.https.onCall(async (data, context) => {
 exports.imageGeneratorFlow = functions.https.onCall(async (data, context) => {
   const concept = (data && data.concept) || (typeof data === "string" ? data : "brand invoice emblem");
   return await imageGeneratorFlow({ concept });
+});
+
+exports.assessSecurityRisk = functions.https.onCall(async (data, context) => {
+  return await securityRiskAssessmentFlow(data || {});
 });
 
 

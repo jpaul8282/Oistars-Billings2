@@ -81,6 +81,7 @@ import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.InvoicesScreen
 import com.example.ui.screens.LoginScreen
 import com.example.ui.screens.OwnerPayoutScreen
+import com.example.ui.screens.SecurityOperationsScreen
 import com.example.ui.screens.StoreCatalogScreen
 import com.example.ui.screens.SubscriptionsScreen
 import com.example.ui.theme.AccentGold
@@ -89,6 +90,7 @@ import com.example.ui.theme.NavyDark
 import com.example.ui.theme.OceanBlue
 import com.example.ui.theme.StatusOverdue
 import com.example.ui.viewmodel.BillingViewModel
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Storefront
 
 enum class NavigationDestination(val title: String, val icon: ImageVector, val tag: String) {
@@ -157,12 +159,26 @@ fun MainBillingApp(
     val userFeedbackMessage by viewModel.userFeedbackMessage.collectAsStateWithLifecycle()
     val payouts by viewModel.allPayouts.collectAsStateWithLifecycle()
     val payoutMetrics by viewModel.ownerPayoutMetrics.collectAsStateWithLifecycle()
+    val payoutGatewayStatus by viewModel.payoutGatewayStatus.collectAsStateWithLifecycle()
+    val settlementWebhooks by viewModel.settlementWebhooks.collectAsStateWithLifecycle()
+    val autoPayoutRules by viewModel.autoPayoutRules.collectAsStateWithLifecycle()
+    val isPayoutSyncing by viewModel.isPayoutSyncing.collectAsStateWithLifecycle()
+
+    val securityThreats by viewModel.securityThreats.collectAsStateWithLifecycle()
+    val firewallRules by viewModel.firewallRules.collectAsStateWithLifecycle()
+    val securityAuditLogs by viewModel.securityAuditLogs.collectAsStateWithLifecycle()
+    val containmentPolicy by viewModel.containmentPolicy.collectAsStateWithLifecycle()
+    val isScanningSecurity by viewModel.isScanningSecurity.collectAsStateWithLifecycle()
+    val securityPostureMetrics by viewModel.securityPostureMetrics.collectAsStateWithLifecycle()
+
     val products by viewModel.allProducts.collectAsStateWithLifecycle()
     val cart by viewModel.userCart.collectAsStateWithLifecycle()
     val orders by viewModel.userOrders.collectAsStateWithLifecycle()
     val realtimeOrderAlert by viewModel.realtimeOrderAlert.collectAsStateWithLifecycle()
 
-    if (currentDestination != NavigationDestination.DASHBOARD) {
+    var showSecurityCenter by remember { mutableStateOf(false) }
+
+    if (currentDestination != NavigationDestination.DASHBOARD && !showSecurityCenter) {
         BackHandler {
             currentDestination = NavigationDestination.DASHBOARD
         }
@@ -194,7 +210,29 @@ fun MainBillingApp(
         return
     }
 
+    if (showSecurityCenter) {
+        SecurityOperationsScreen(
+            metrics = securityPostureMetrics,
+            threats = securityThreats,
+            firewallRules = firewallRules,
+            auditLogs = securityAuditLogs,
+            policy = containmentPolicy,
+            isScanning = isScanningSecurity,
+            operatorName = userName,
+            onRunPerimeterScan = { viewModel.runSecurityPerimeterScan() },
+            onAssessThreatWithAi = { viewModel.assessThreatWithAi(it) },
+            onTriggerBreachProbe = { viewModel.triggerFirewallBreachProbe(it) },
+            onApproveContainment = { viewModel.approveThreatContainment(it, operatorName = userName) },
+            onDismissThreat = { viewModel.dismissSecurityThreat(it, operatorName = userName) },
+            onUpdatePolicy = { viewModel.updateContainmentPolicy(it, operatorName = userName) },
+            onBack = { showSecurityCenter = false },
+            modifier = Modifier.fillMaxSize()
+        )
+        return
+    }
+
     val overdueCount = metrics.overdueInvoicesCount
+    val activeSecurityAlerts = securityPostureMetrics.activeThreatsCount
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -226,6 +264,32 @@ fun MainBillingApp(
                     }
                 },
                 actions = {
+                    // Security Operations & Threat Defense Shortcut
+                    IconButton(
+                        onClick = { showSecurityCenter = true },
+                        modifier = Modifier.testTag("action_security_center")
+                    ) {
+                        if (activeSecurityAlerts > 0) {
+                            BadgedBox(badge = {
+                                Badge(containerColor = StatusOverdue) {
+                                    Text("$activeSecurityAlerts", fontSize = 10.sp, color = Color.White)
+                                }
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.Shield,
+                                    contentDescription = "Security Operations Center",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Shield,
+                                contentDescription = "Security Operations Center",
+                                tint = OceanBlue
+                            )
+                        }
+                    }
+
                     // Owner Payouts Shortcut
                     IconButton(
                         onClick = { currentDestination = NavigationDestination.PAYOUTS },
@@ -505,6 +569,10 @@ fun MainBillingApp(
                         payouts = payouts,
                         orders = orders,
                         invoices = invoices,
+                        gatewayStatus = payoutGatewayStatus,
+                        settlementWebhooks = settlementWebhooks,
+                        autoPayoutRules = autoPayoutRules,
+                        isPayoutSyncing = isPayoutSyncing,
                         onRequestPayout = { amount, ownerId, ownerName, bank, iban, bic, speed, ref, notes ->
                             viewModel.requestOwnerPayout(
                                 amount = amount,
@@ -534,6 +602,11 @@ fun MainBillingApp(
                                 }
                             }
                         },
+                        onRefreshLiveFeed = { viewModel.refreshLivePayoutFeed() },
+                        onSaveAutoPayoutRules = { enabled, schedule, minThreshold, reserveFloat ->
+                            viewModel.saveAutoPayoutRules(enabled, schedule, minThreshold, reserveFloat)
+                        },
+                        onExecuteAutoSweepNow = { viewModel.executeAutoSweepNow(userName) },
                         syncStatusMessage = syncStatusMessage,
                         ownerName = userName,
                         ownerEmail = userEmail,
@@ -566,6 +639,8 @@ fun MainBillingApp(
                             isLoggedIn = false
                         },
                         onNavigateToPayouts = { currentDestination = NavigationDestination.PAYOUTS },
+                        onNavigateToSecurityCenter = { showSecurityCenter = true },
+                        pendingSecurityAlertsCount = activeSecurityAlerts,
                         onSyncToCloud = {
                             coroutineScope.launch {
                                 val uid = firebaseAuth.currentUser?.uid ?: "jurgen-westerveld"
