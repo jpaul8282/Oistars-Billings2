@@ -17,9 +17,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AccountBalance
@@ -30,6 +32,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Info
@@ -93,6 +96,7 @@ import com.example.data.model.Order
 import com.example.data.service.AutoPayoutRules
 import com.example.data.service.PayoutGatewayStatus
 import com.example.data.service.SettlementWebhookEvent
+import com.example.data.service.StripeLiveBalanceState
 import com.example.ui.components.Formatters
 import com.example.ui.theme.AccentGold
 import com.example.ui.theme.NavyDark
@@ -112,6 +116,7 @@ fun OwnerPayoutScreen(
     orders: List<Order> = emptyList(),
     invoices: List<InvoiceEntity> = emptyList(),
     gatewayStatus: PayoutGatewayStatus = PayoutGatewayStatus(),
+    stripeBalanceState: StripeLiveBalanceState = StripeLiveBalanceState(),
     settlementWebhooks: List<SettlementWebhookEvent> = emptyList(),
     autoPayoutRules: AutoPayoutRules = AutoPayoutRules(),
     isPayoutSyncing: Boolean = false,
@@ -183,6 +188,15 @@ fun OwnerPayoutScreen(
                 gatewayStatus = gatewayStatus,
                 isSyncing = isPayoutSyncing,
                 onRefreshFeed = onRefreshLiveFeed
+            )
+        }
+
+        // Live Stripe Payouts & Treasury Connect Card
+        item {
+            LiveStripeConnectCard(
+                stripeState = stripeBalanceState,
+                isSyncing = isPayoutSyncing,
+                onRefreshStripe = onRefreshLiveFeed
             )
         }
 
@@ -461,8 +475,9 @@ fun OwnerPayoutScreen(
                                 onClick = onSyncPayouts,
                                 shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                                border = ButtonDefaults.outlinedButtonBorder.copy(
-                                    brush = androidx.compose.ui.graphics.SolidColor(Color.White.copy(alpha = 0.35f))
+                                border = androidx.compose.foundation.BorderStroke(
+                                    width = 1.dp,
+                                    color = Color.White.copy(alpha = 0.35f)
                                 ),
                                 modifier = Modifier
                                     .height(46.dp)
@@ -835,6 +850,8 @@ fun OwnerPayoutScreen(
             beneficiaryBank = "ING Bank N.V.",
             beneficiaryIban = "NL43 INGB 0006 3721 46",
             beneficiaryBic = "INGBNL2A",
+            stripeConfigured = stripeBalanceState.isConfigured,
+            stripeAvailableBalanceEur = stripeBalanceState.availableBalanceEur,
             onDismiss = { showRequestDialog = false },
             onConfirm = { amount, speed, reference, notes ->
                 onRequestPayout(
@@ -849,7 +866,6 @@ fun OwnerPayoutScreen(
                     notes
                 )
                 showRequestDialog = false
-                Toast.makeText(context, "Payout of €%.2f initiated successfully!".format(amount), Toast.LENGTH_LONG).show()
             }
         )
     }
@@ -914,11 +930,17 @@ fun PayoutListItemCard(
                 modifier = Modifier.size(42.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    val isFast = payout.payoutSpeed == PayoutSpeed.WERO_INSTANT.name || payout.payoutSpeed == PayoutSpeed.INSTANT.name
+                    val isFast = payout.payoutSpeed == PayoutSpeed.WERO_INSTANT.name ||
+                        payout.payoutSpeed == PayoutSpeed.INSTANT.name ||
+                        payout.payoutSpeed == PayoutSpeed.STRIPE_INSTANT.name
                     Icon(
-                        imageVector = if (isFast) Icons.Default.Bolt else Icons.Default.AccountBalance,
+                        imageVector = if (payout.isStripePayout) Icons.Default.CreditCard else if (isFast) Icons.Default.Bolt else Icons.Default.AccountBalance,
                         contentDescription = null,
-                        tint = if (payout.payoutSpeed == PayoutSpeed.WERO_INSTANT.name) AccentGold else statusColor,
+                        tint = when {
+                            payout.isStripePayout -> OceanBlue
+                            payout.payoutSpeed == PayoutSpeed.WERO_INSTANT.name -> AccentGold
+                            else -> statusColor
+                        },
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -936,7 +958,21 @@ fun PayoutListItemCard(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false)
                     )
-                    if (payout.payoutSpeed == PayoutSpeed.WERO_INSTANT.name) {
+                    if (payout.isStripePayout) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            color = NavyDark.copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = "STRIPE",
+                                color = OceanBlue,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            )
+                        }
+                    } else if (payout.payoutSpeed == PayoutSpeed.WERO_INSTANT.name) {
                         Spacer(modifier = Modifier.width(6.dp))
                         Surface(
                             color = OceanBlue.copy(alpha = 0.15f),
@@ -956,9 +992,15 @@ fun PayoutListItemCard(
                 Spacer(modifier = Modifier.height(2.dp))
 
                 Text(
-                    text = "${payout.destinationBank} • •••• ${payout.destinationIban.takeLast(4)}",
+                    text = if (!payout.stripePayoutId.isNullOrBlank()) {
+                        "${payout.stripePayoutId} • ${payout.destinationBank} •••• ${payout.destinationIban.takeLast(4)}"
+                    } else {
+                        "${payout.destinationBank} • •••• ${payout.destinationIban.takeLast(4)}"
+                    },
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
 
                 Spacer(modifier = Modifier.height(2.dp))
@@ -1006,16 +1048,26 @@ fun RequestPayoutDialog(
     beneficiaryBank: String,
     beneficiaryIban: String,
     beneficiaryBic: String,
+    stripeConfigured: Boolean = false,
+    stripeAvailableBalanceEur: Double = 0.0,
     onDismiss: () -> Unit,
     onConfirm: (amount: Double, speed: PayoutSpeed, reference: String, notes: String) -> Unit
 ) {
-    var amountInput by remember { mutableStateOf(if (availableBalance > 0) "%.2f".format(availableBalance) else "500.00") }
-    var selectedSpeed by remember { mutableStateOf(PayoutSpeed.WERO_INSTANT) }
+    var amountInput by remember { mutableStateOf(if (availableBalance > 0) "%.2f".format(Locale.US, availableBalance) else "500.00") }
+    var selectedSpeed by remember {
+        mutableStateOf(if (stripeConfigured) PayoutSpeed.STRIPE_INSTANT else PayoutSpeed.WERO_INSTANT)
+    }
     var referenceText by remember { mutableStateOf("Owner Draw - Oistars International") }
     var notesText by remember { mutableStateOf("") }
 
     val enteredAmount = amountInput.toDoubleOrNull() ?: 0.0
-    val isAmountValid = enteredAmount > 0 && enteredAmount <= (availableBalance + 0.01)
+    val isStripeSpeed = selectedSpeed == PayoutSpeed.STRIPE_INSTANT || selectedSpeed == PayoutSpeed.STRIPE_STANDARD
+    val maxWithdrawable = if (isStripeSpeed && stripeConfigured && stripeAvailableBalanceEur > 0.0) {
+        stripeAvailableBalanceEur
+    } else {
+        availableBalance
+    }
+    val isAmountValid = enteredAmount > 0 && enteredAmount <= (maxWithdrawable + 0.01) && (!isStripeSpeed || stripeConfigured)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1037,7 +1089,7 @@ fun RequestPayoutDialog(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text("Request Owner Payout", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Text("European Bankwire via Wero (EPI) & SEPA", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Live Stripe Payouts, Wero (EPI) & SEPA", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         },
@@ -1045,8 +1097,9 @@ fun RequestPayoutDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .testTag("request_payout_dialog"),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 // Balance Banner
                 Surface(
@@ -1060,9 +1113,13 @@ fun RequestPayoutDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Available to Withdraw:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(
-                            Formatters.formatCurrency(availableBalance, currency),
+                            text = if (isStripeSpeed && stripeConfigured) "Stripe Balance:" else "Available to Withdraw:",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            Formatters.formatCurrency(maxWithdrawable, currency),
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
                             color = OceanBlue
@@ -1075,11 +1132,11 @@ fun RequestPayoutDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    listOf(0.25 to "25%", 0.50 to "50%", 0.75 to "75%", 1.0 to "100% (All)").forEach { (fraction, label) ->
+                    listOf(0.25 to "25%", 0.50 to "50%", 0.75 to "75%", 1.0 to "100%").forEach { (fraction, label) ->
                         OutlinedButton(
                             onClick = {
-                                val calc = (availableBalance * fraction)
-                                amountInput = "%.2f".format(calc)
+                                val calc = (maxWithdrawable * fraction)
+                                amountInput = "%.2f".format(Locale.US, calc)
                             },
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                             shape = RoundedCornerShape(8.dp),
@@ -1102,7 +1159,9 @@ fun RequestPayoutDialog(
                     singleLine = true,
                     isError = !isAmountValid && amountInput.isNotBlank(),
                     supportingText = {
-                        if (enteredAmount > availableBalance) {
+                        if (isStripeSpeed && !stripeConfigured) {
+                            Text("Add STRIPE_SECRET_KEY in AI Studio Secrets for Stripe payouts", color = StatusPending)
+                        } else if (enteredAmount > maxWithdrawable) {
                             Text("Amount exceeds available balance", color = StatusOverdue)
                         } else if (enteredAmount <= 0 && amountInput.isNotBlank()) {
                             Text("Amount must be greater than €0", color = StatusOverdue)
@@ -1121,17 +1180,19 @@ fun RequestPayoutDialog(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    // Wero Instant Option
+                    // Stripe Instant Option
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { selectedSpeed = PayoutSpeed.WERO_INSTANT },
+                            .testTag("option_stripe_instant")
+                            .clickable { selectedSpeed = PayoutSpeed.STRIPE_INSTANT },
                         shape = RoundedCornerShape(10.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = if (selectedSpeed == PayoutSpeed.WERO_INSTANT) OceanBlue.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                            containerColor = if (selectedSpeed == PayoutSpeed.STRIPE_INSTANT) OceanBlue.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                         ),
-                        border = if (selectedSpeed == PayoutSpeed.WERO_INSTANT) ButtonDefaults.outlinedButtonBorder.copy(
-                            brush = androidx.compose.ui.graphics.SolidColor(OceanBlue)
+                        border = if (selectedSpeed == PayoutSpeed.STRIPE_INSTANT) androidx.compose.foundation.BorderStroke(
+                            width = 1.dp,
+                            color = OceanBlue
                         ) else null
                     ) {
                         Row(
@@ -1141,20 +1202,102 @@ fun RequestPayoutDialog(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Bolt, contentDescription = null, tint = AccentGold, modifier = Modifier.size(20.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.CreditCard, contentDescription = null, tint = OceanBlue, modifier = Modifier.size(20.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("Wero Instant Wire (EPI)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Text("Stripe Instant Payout", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Surface(
-                                            color = AccentGold.copy(alpha = 0.2f),
+                                            color = if (stripeConfigured) StatusPaid.copy(alpha = 0.18f) else StatusPending.copy(alpha = 0.18f),
                                             shape = RoundedCornerShape(4.dp)
                                         ) {
-                                            Text("RECOMMENDED", color = AccentGold, fontSize = 8.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                            Text(
+                                                text = if (stripeConfigured) "LIVE API" else "KEY NEEDED",
+                                                color = if (stripeConfigured) StatusPaid else StatusPending,
+                                                fontSize = 8.sp,
+                                                fontWeight = FontWeight.Black,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
                                         }
                                     }
+                                    Text("POST /v1/payouts (method=instant)", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Text("€0.00", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = StatusPaid)
+                        }
+                    }
+
+                    // Stripe Standard Option
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("option_stripe_standard")
+                            .clickable { selectedSpeed = PayoutSpeed.STRIPE_STANDARD },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (selectedSpeed == PayoutSpeed.STRIPE_STANDARD) OceanBlue.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        ),
+                        border = if (selectedSpeed == PayoutSpeed.STRIPE_STANDARD) androidx.compose.foundation.BorderStroke(
+                            width = 1.dp,
+                            color = OceanBlue
+                        ) else null
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.AccountBalance, contentDescription = null, tint = OceanBlue, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text("Stripe Standard SEPA", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Text("POST /v1/payouts (method=standard • 1-2 days)", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Text("€0.00", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = StatusPaid)
+                        }
+                    }
+
+                    // Wero Instant Option
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedSpeed = PayoutSpeed.WERO_INSTANT },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (selectedSpeed == PayoutSpeed.WERO_INSTANT) OceanBlue.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        ),
+                        border = if (selectedSpeed == PayoutSpeed.WERO_INSTANT) androidx.compose.foundation.BorderStroke(
+                            width = 1.dp,
+                            color = OceanBlue
+                        ) else null
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Bolt, contentDescription = null, tint = AccentGold, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text("Wero Instant Wire (EPI)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                     Text("Real-time (< 5s) direct to ING bank account", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
@@ -1171,8 +1314,9 @@ fun RequestPayoutDialog(
                         colors = CardDefaults.cardColors(
                             containerColor = if (selectedSpeed == PayoutSpeed.INSTANT) OceanBlue.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                         ),
-                        border = if (selectedSpeed == PayoutSpeed.INSTANT) ButtonDefaults.outlinedButtonBorder.copy(
-                            brush = androidx.compose.ui.graphics.SolidColor(OceanBlue)
+                        border = if (selectedSpeed == PayoutSpeed.INSTANT) androidx.compose.foundation.BorderStroke(
+                            width = 1.dp,
+                            color = OceanBlue
                         ) else null
                     ) {
                         Row(
@@ -1203,8 +1347,9 @@ fun RequestPayoutDialog(
                         colors = CardDefaults.cardColors(
                             containerColor = if (selectedSpeed == PayoutSpeed.STANDARD) OceanBlue.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                         ),
-                        border = if (selectedSpeed == PayoutSpeed.STANDARD) ButtonDefaults.outlinedButtonBorder.copy(
-                            brush = androidx.compose.ui.graphics.SolidColor(OceanBlue)
+                        border = if (selectedSpeed == PayoutSpeed.STANDARD) androidx.compose.foundation.BorderStroke(
+                            width = 1.dp,
+                            color = OceanBlue
                         ) else null
                     ) {
                         Row(
@@ -1244,7 +1389,7 @@ fun RequestPayoutDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = "BIC: $beneficiaryBic • Wero / EPI Active",
+                            text = "BIC: $beneficiaryBic • ${if (isStripeSpeed) "Stripe Connected External Bank" else "Wero / EPI Active"}",
                             fontSize = 9.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
                         )
@@ -1270,7 +1415,11 @@ fun RequestPayoutDialog(
                 modifier = Modifier.testTag("confirm_payout_button")
             ) {
                 Text(
-                    text = if (selectedSpeed == PayoutSpeed.WERO_INSTANT) "Transfer via Wero" else "Confirm Transfer",
+                    text = when (selectedSpeed) {
+                        PayoutSpeed.STRIPE_INSTANT, PayoutSpeed.STRIPE_STANDARD -> "Transfer via Stripe"
+                        PayoutSpeed.WERO_INSTANT -> "Transfer via Wero"
+                        else -> "Confirm Transfer"
+                    },
                     color = Color.White,
                     fontWeight = FontWeight.Bold
                 )
@@ -1329,6 +1478,7 @@ fun PayoutDetailDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .testTag("payout_detail_dialog"),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
@@ -1404,6 +1554,18 @@ fun PayoutDetailDialog(
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Reference:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(payout.reference, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        if (!payout.stripePayoutId.isNullOrBlank()) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Stripe Payout ID:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(payout.stripePayoutId, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = OceanBlue)
+                            }
+                        }
+                        if (!payout.stripeBalanceTxId.isNullOrBlank()) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Stripe Balance Tx:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(payout.stripeBalanceTxId, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
                         }
                     }
                 }

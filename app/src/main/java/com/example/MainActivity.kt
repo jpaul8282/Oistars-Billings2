@@ -160,6 +160,7 @@ fun MainBillingApp(
     val payouts by viewModel.allPayouts.collectAsStateWithLifecycle()
     val payoutMetrics by viewModel.ownerPayoutMetrics.collectAsStateWithLifecycle()
     val payoutGatewayStatus by viewModel.payoutGatewayStatus.collectAsStateWithLifecycle()
+    val stripeBalanceState by viewModel.stripeBalanceState.collectAsStateWithLifecycle()
     val settlementWebhooks by viewModel.settlementWebhooks.collectAsStateWithLifecycle()
     val autoPayoutRules by viewModel.autoPayoutRules.collectAsStateWithLifecycle()
     val isPayoutSyncing by viewModel.isPayoutSyncing.collectAsStateWithLifecycle()
@@ -570,6 +571,7 @@ fun MainBillingApp(
                         orders = orders,
                         invoices = invoices,
                         gatewayStatus = payoutGatewayStatus,
+                        stripeBalanceState = stripeBalanceState,
                         settlementWebhooks = settlementWebhooks,
                         autoPayoutRules = autoPayoutRules,
                         isPayoutSyncing = isPayoutSyncing,

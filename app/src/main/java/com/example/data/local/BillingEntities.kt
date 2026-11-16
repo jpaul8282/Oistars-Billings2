@@ -114,13 +114,15 @@ enum class PayoutStatus(val label: String) {
 }
 
 enum class PayoutSpeed(val label: String, val feeEuro: Double, val etaDescription: String) {
+    STRIPE_INSTANT("Stripe Instant Payout", 0.0, "Real-time debit/SEPA payout via Stripe Payouts API"),
+    STRIPE_STANDARD("Stripe Standard SEPA", 0.0, "1-2 business days via Stripe Treasury"),
     WERO_INSTANT("Wero Instant Wire", 0.0, "Real-time (< 5s) via European Payments Initiative"),
     INSTANT("Instant SEPA", 0.0, "Within minutes"),
     STANDARD("Standard SEPA", 0.0, "1-2 business days");
 
     companion object {
         fun fromString(value: String): PayoutSpeed {
-            return entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: WERO_INSTANT
+            return entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: STRIPE_INSTANT
         }
     }
 }
@@ -139,16 +141,25 @@ data class PayoutEntity(
     val destinationBank: String = "ING Bank N.V.",
     val destinationIban: String = "NL43 INGB 0006 3721 46",
     val destinationBic: String = "INGBNL2A",
-    val payoutSpeed: String = PayoutSpeed.WERO_INSTANT.name,
+    val payoutSpeed: String = PayoutSpeed.STRIPE_INSTANT.name,
     val reference: String = "Owner Draw / Profit Distribution",
     val initiatedAt: Long = System.currentTimeMillis(),
     val estimatedArrivalAt: Long = System.currentTimeMillis(),
     val completedAt: Long? = System.currentTimeMillis(),
-    val notes: String = ""
+    val notes: String = "",
+    val stripePayoutId: String? = null,
+    val stripeBalanceTxId: String? = null,
+    val stripeArrivalDate: Long? = null,
+    val providerRail: String = "STRIPE"
 ) {
     val payoutStatus: PayoutStatus
         get() = PayoutStatus.fromString(status)
 
     val speed: PayoutSpeed
         get() = PayoutSpeed.fromString(payoutSpeed)
+
+    val isStripePayout: Boolean
+        get() = providerRail.equals("STRIPE", ignoreCase = true) ||
+            !stripePayoutId.isNullOrBlank() ||
+            payoutSpeed.startsWith("STRIPE_", ignoreCase = true)
 }

@@ -14,10 +14,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Webhook
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -26,6 +31,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -40,8 +46,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.service.PayoutGatewayStatus
 import com.example.data.service.SettlementWebhookEvent
+import com.example.data.service.StripeLiveBalanceState
 import com.example.ui.components.Formatters
 import com.example.ui.theme.AccentGold
+import com.example.ui.theme.NavyDark
 import com.example.ui.theme.OceanBlue
 import com.example.ui.theme.StatusOverdue
 import com.example.ui.theme.StatusPaid
@@ -55,6 +63,7 @@ fun LivePayoutGatewayStrip(
     modifier: Modifier = Modifier
 ) {
     val badgeColor = if (gatewayStatus.isConnected) StatusPaid else StatusPending
+    val stripeColor = if (gatewayStatus.stripeConnected) StatusPaid else StatusPending
 
     Card(
         modifier = modifier
@@ -100,14 +109,27 @@ fun LivePayoutGatewayStrip(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (gatewayStatus.isConnected) "LIVE GATEWAY CONNECTED" else "RECONNECTING",
+                            text = if (gatewayStatus.isConnected) "LIVE GATEWAY" else "RECONNECTING",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = badgeColor,
                             letterSpacing = 0.4.sp
                         )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            color = stripeColor.copy(alpha = 0.14f),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = gatewayStatus.stripeModeLabel,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = stripeColor,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                            )
+                        }
                         if (gatewayStatus.latencyMs > 0) {
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(5.dp))
                             Surface(
                                 color = OceanBlue.copy(alpha = 0.12f),
                                 shape = RoundedCornerShape(4.dp)
@@ -155,9 +177,268 @@ fun LivePayoutGatewayStrip(
                 } else {
                     Icon(
                         imageVector = Icons.Default.Refresh,
-                        contentDescription = "Refresh Live Gateway",
+                        contentDescription = "Refresh Live Stripe & Gateway",
                         tint = OceanBlue
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun LiveStripeConnectCard(
+    stripeState: StripeLiveBalanceState,
+    isSyncing: Boolean,
+    onRefreshStripe: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isReady = stripeState.isConfigured && stripeState.errorMessage == null
+    val statusColor = when {
+        !stripeState.isConfigured -> StatusPending
+        stripeState.errorMessage != null -> StatusOverdue
+        stripeState.isLiveMode -> StatusPaid
+        else -> OceanBlue
+    }
+    val modeBadgeText = when {
+        !stripeState.isConfigured -> "KEY REQUIRED"
+        stripeState.errorMessage != null -> "API ERROR"
+        stripeState.isLiveMode -> "LIVE MODE"
+        else -> "TEST MODE"
+    }
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("live_stripe_connect_card"),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = NavyDark,
+                        modifier = Modifier.size(38.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.CreditCard,
+                                contentDescription = "Stripe Payouts Integration",
+                                tint = AccentGold,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Stripe Payouts & Treasury",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            if (isReady) {
+                                Icon(
+                                    imageVector = Icons.Default.Verified,
+                                    contentDescription = "Stripe Connected",
+                                    tint = statusColor,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                        Text(
+                            text = stripeState.accountId?.let { "Account: $it" }
+                                ?: "api.stripe.com/v1/payouts • EUR Rail",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Surface(
+                    color = statusColor.copy(alpha = 0.14f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = modeBadgeText,
+                        color = statusColor,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            if (stripeState.isConfigured) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        color = StatusPaid.copy(alpha = 0.08f)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "STRIPE AVAILABLE",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = StatusPaid
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = Formatters.formatCurrency(stripeState.availableBalanceEur, "EUR"),
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = if (stripeState.payoutsEnabled) "Payouts Enabled" else "Payouts Restricted",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        color = StatusPending.copy(alpha = 0.08f)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "STRIPE PENDING",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = StatusPending
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = Formatters.formatCurrency(stripeState.pendingBalanceEur, "EUR"),
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Schedule: ${stripeState.scheduleInterval}",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AccountBalance,
+                                contentDescription = null,
+                                tint = OceanBlue,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "External Bank: ${stripeState.bankName} •••• ${stripeState.ibanLast4}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = stripeState.statusMessage,
+                                    fontSize = 10.sp,
+                                    color = if (stripeState.errorMessage != null) StatusOverdue else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        OutlinedButton(
+                            onClick = onRefreshStripe,
+                            enabled = !isSyncing,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .height(36.dp)
+                                .testTag("btn_sync_stripe_live")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Sync,
+                                contentDescription = "Sync Stripe Balance",
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Sync", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            } else {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = StatusPending.copy(alpha = 0.1f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Key,
+                            contentDescription = "Stripe API Key Configuration",
+                            tint = StatusPending,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Stripe API Key Not Configured",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                text = "Set STRIPE_SECRET_KEY (and optional STRIPE_CONNECT_ACCOUNT_ID) in the AI Studio Secrets panel to load live Stripe EUR balances and dispatch real payouts.",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 15.sp
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -206,12 +487,12 @@ fun LiveSettlementWebhookFeedCard(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = "Live Wero / SEPA Webhook Stream",
+                            text = "Live Stripe & Wero Webhook Stream",
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
                         )
                         Text(
-                            text = "Real-time settlement callbacks from Cloud Firestore",
+                            text = "Real-time payout events synced via Cloud Firestore",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -234,13 +515,13 @@ fun LiveSettlementWebhookFeedCard(
 
             if (webhooks.isEmpty()) {
                 Text(
-                    text = "Listening for live Wero EPI & SEPA gateway callbacks...",
+                    text = "Listening for live Stripe payout.* & Wero EPI callbacks...",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                webhooks.take(4).forEachIndexed { index, hook ->
+                webhooks.take(5).forEachIndexed { index, hook ->
                     val statusColor = when (hook.status.uppercase()) {
                         "SETTLED" -> StatusPaid
                         "CANCELLED", "FAILED" -> StatusOverdue
@@ -258,7 +539,7 @@ fun LiveSettlementWebhookFeedCard(
                             Icon(
                                 imageVector = Icons.Default.Bolt,
                                 contentDescription = null,
-                                tint = AccentGold,
+                                tint = if (hook.provider.contains("STRIPE", ignoreCase = true)) OceanBlue else AccentGold,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
@@ -300,7 +581,7 @@ fun LiveSettlementWebhookFeedCard(
                             }
                         }
                     }
-                    if (index < webhooks.take(4).lastIndex) {
+                    if (index < webhooks.take(5).lastIndex) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
                     }
                 }

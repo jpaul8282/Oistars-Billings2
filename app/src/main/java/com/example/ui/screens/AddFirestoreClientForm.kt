@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -30,7 +31,6 @@ import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Save
@@ -534,7 +534,7 @@ fun AddFirestoreClientForm(
                         label = { Text("Account Notes") },
                         placeholder = { Text("Optional notes or billing instructions") },
                         leadingIcon = {
-                            Icon(Icons.Default.Notes, contentDescription = null, tint = OceanBlue)
+                            Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = null, tint = OceanBlue)
                         },
                         maxLines = 2,
                         modifier = Modifier

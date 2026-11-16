@@ -24,8 +24,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.CalendarToday
@@ -1097,7 +1097,7 @@ private fun ClientBillingHistorySection(
                                     }
 
                                     Icon(
-                                        imageVector = Icons.Default.ArrowForwardIos,
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
                                         contentDescription = "Details",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                                         modifier = Modifier.size(12.dp)

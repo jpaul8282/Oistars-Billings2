@@ -42,6 +42,7 @@ import com.example.data.service.PayoutGatewayStatus
 import com.example.data.service.PayoutLiveService
 import com.example.data.service.SecurityDefenseService
 import com.example.data.service.SettlementWebhookEvent
+import com.example.data.service.StripeLiveBalanceState
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -107,8 +108,9 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
     private val _lastGeneratedAiCommunication = MutableStateFlow<InvoiceCommunicationResult?>(null)
     val lastGeneratedAiCommunication: StateFlow<InvoiceCommunicationResult?> = _lastGeneratedAiCommunication.asStateFlow()
 
-    // Live Payout Gateway & Settlement Streams
+    // Live Payout Gateway, Stripe Connect & Settlement Streams
     val payoutGatewayStatus: StateFlow<PayoutGatewayStatus> = payoutLiveService.gatewayStatus
+    val stripeBalanceState: StateFlow<StripeLiveBalanceState> = payoutLiveService.stripeBalanceState
 
     private val _settlementWebhooks = MutableStateFlow<List<SettlementWebhookEvent>>(emptyList())
     val settlementWebhooks: StateFlow<List<SettlementWebhookEvent>> = _settlementWebhooks.asStateFlow()
@@ -192,6 +194,10 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
             commerceRepository.seedDefaultProductsIfEmpty()
             orderRepository.syncOrdersFromFirestore(uid)
             payoutLiveService.seedInitialWebhooksIfEmpty(uid)
+            val stripeResult = payoutLiveService.fetchLiveStripeBalanceAndPayouts(uid)
+            stripeResult.getOrNull()?.forEach { stripePayout ->
+                repository.savePayout(stripePayout)
+            }
             payoutLiveService.probeGatewayHealth(uid)
             securityDefenseService.seedBaselineIfNeeded(uid)
         }
@@ -707,7 +713,7 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // --- Owner Payout Actions (Live Integrated) ---
+    // --- Owner Payout Actions (Live Stripe & Wero Integrated) ---
     fun requestOwnerPayout(
         amount: Double,
         ownerId: String = "jurgen-westerveld",
@@ -715,7 +721,7 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
         destinationBank: String = "ING Bank N.V.",
         destinationIban: String = "NL43 INGB 0006 3721 46",
         destinationBic: String = "INGBNL2A",
-        speed: PayoutSpeed = PayoutSpeed.WERO_INSTANT,
+        speed: PayoutSpeed = PayoutSpeed.STRIPE_INSTANT,
         reference: String = "Owner Draw / Settlement",
         notes: String = ""
     ) {
@@ -723,8 +729,11 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
             _isPayoutSyncing.value = true
             val fee = speed.feeEuro
             val now = System.currentTimeMillis()
-            val isImmediate = speed == PayoutSpeed.WERO_INSTANT || speed == PayoutSpeed.INSTANT
+            val isStripe = speed == PayoutSpeed.STRIPE_INSTANT || speed == PayoutSpeed.STRIPE_STANDARD
+            val isImmediate = speed == PayoutSpeed.WERO_INSTANT || speed == PayoutSpeed.INSTANT || speed == PayoutSpeed.STRIPE_INSTANT
             val arrival = when (speed) {
+                PayoutSpeed.STRIPE_INSTANT -> now + 15000L
+                PayoutSpeed.STRIPE_STANDARD -> now + (24 * 60 * 60 * 1000L)
                 PayoutSpeed.WERO_INSTANT -> now + 4000L
                 PayoutSpeed.INSTANT -> now + (5 * 60 * 1000L)
                 PayoutSpeed.STANDARD -> now + (24 * 60 * 60 * 1000L)
@@ -743,15 +752,45 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
                 destinationBic = destinationBic,
                 payoutSpeed = speed.name,
                 reference = reference.ifBlank {
-                    if (speed == PayoutSpeed.WERO_INSTANT) "Wero Instant Wire - Oistars Draw" else "Owner Draw - Oistars International"
+                    when (speed) {
+                        PayoutSpeed.STRIPE_INSTANT, PayoutSpeed.STRIPE_STANDARD -> "Stripe Live Payout - Oistars Draw"
+                        PayoutSpeed.WERO_INSTANT -> "Wero Instant Wire - Oistars Draw"
+                        else -> "Owner Draw - Oistars International"
+                    }
                 },
                 initiatedAt = now,
                 estimatedArrivalAt = arrival,
-                completedAt = if (isImmediate) now else null,
+                completedAt = if (isImmediate && !isStripe) now else null,
                 notes = notes.ifBlank {
-                    if (speed == PayoutSpeed.WERO_INSTANT) "Settled in real-time (< 5s) via Wero (European Payments Initiative) to ING NL43INGB0006372146" else ""
+                    when (speed) {
+                        PayoutSpeed.STRIPE_INSTANT -> "Dispatched via live Stripe Payouts API (Instant)"
+                        PayoutSpeed.STRIPE_STANDARD -> "Dispatched via live Stripe Payouts API (Standard SEPA)"
+                        PayoutSpeed.WERO_INSTANT -> "Settled in real-time (< 5s) via Wero (European Payments Initiative) to ING NL43INGB0006372146"
+                        else -> ""
+                    }
+                },
+                providerRail = when (speed) {
+                    PayoutSpeed.STRIPE_INSTANT, PayoutSpeed.STRIPE_STANDARD -> "STRIPE"
+                    PayoutSpeed.WERO_INSTANT -> "WERO"
+                    else -> "SEPA"
                 }
             )
+
+            if (isStripe) {
+                val liveResult = payoutLiveService.initiateLivePayout(activeUserId(), draftPayout)
+                _isPayoutSyncing.value = false
+                liveResult.onSuccess { livePayout ->
+                    repository.savePayout(livePayout)
+                    payoutLiveService.fetchLiveStripeBalanceAndPayouts(activeUserId())
+                    _userFeedbackMessage.value =
+                        "Live Stripe payout ${livePayout.stripePayoutId ?: livePayout.id} (€%.2f) ${livePayout.payoutStatus.label}".format(livePayout.amount)
+                }.onFailure { err ->
+                    _userFeedbackMessage.value =
+                        "Stripe payout failed: ${err.message ?: "Configure STRIPE_SECRET_KEY in AI Studio Secrets"}"
+                }
+                return@launch
+            }
+
             repository.savePayout(draftPayout)
             val liveResult = payoutLiveService.initiateLivePayout(activeUserId(), draftPayout)
             val savedPayout = liveResult.getOrDefault(draftPayout)
@@ -769,9 +808,15 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
 
     fun cancelPayout(payout: PayoutEntity) {
         viewModelScope.launch {
-            repository.updatePayoutStatus(payout.id, PayoutStatus.CANCELLED.name)
-            payoutLiveService.cancelLivePayout(activeUserId(), payout.id)
-            _userFeedbackMessage.value = "Live payout ${payout.id} cancelled"
+            _isPayoutSyncing.value = true
+            val res = payoutLiveService.cancelLivePayout(activeUserId(), payout.id, payout.stripePayoutId)
+            _isPayoutSyncing.value = false
+            res.onSuccess {
+                repository.updatePayoutStatus(payout.id, PayoutStatus.CANCELLED.name)
+                _userFeedbackMessage.value = "Live payout ${payout.stripePayoutId ?: payout.id} cancelled"
+            }.onFailure { err ->
+                _userFeedbackMessage.value = "Cancel failed: ${err.message ?: "Unable to cancel payout"}"
+            }
         }
     }
 
@@ -786,9 +831,22 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
     fun refreshLivePayoutFeed() {
         viewModelScope.launch {
             _isPayoutSyncing.value = true
-            payoutLiveService.probeGatewayHealth(activeUserId())
+            val uid = activeUserId()
+            val stripeResult = payoutLiveService.fetchLiveStripeBalanceAndPayouts(uid)
+            stripeResult.getOrNull()?.forEach { stripePayout ->
+                repository.savePayout(stripePayout)
+            }
+            payoutLiveService.probeGatewayHealth(uid)
             _isPayoutSyncing.value = false
-            _userFeedbackMessage.value = "Live Wero / SEPA gateway refreshed"
+            val st = stripeBalanceState.value
+            _userFeedbackMessage.value = when {
+                st.isConfigured && st.errorMessage == null ->
+                    "Stripe Live synced (${st.recentPayoutsCount} payouts • €%.2f available)".format(st.availableBalanceEur)
+                st.errorMessage != null ->
+                    "Stripe sync warning: ${st.errorMessage}"
+                else ->
+                    "Gateway refreshed • Add STRIPE_SECRET_KEY in Secrets for live Stripe balance"
+            }
         }
     }
 
@@ -821,12 +879,13 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
             _userFeedbackMessage.value = "Sweep skipped: €%.2f sweepable is below €%.2f min threshold".format(sweepable, rules.minThreshold)
             return
         }
+        val sweepSpeed = if (stripeBalanceState.value.isConfigured) PayoutSpeed.STRIPE_INSTANT else PayoutSpeed.WERO_INSTANT
         requestOwnerPayout(
             amount = sweepable,
             ownerId = activeUserId(),
             ownerName = ownerName,
-            speed = PayoutSpeed.WERO_INSTANT,
-            reference = "Automated Wero Treasury Sweep",
+            speed = sweepSpeed,
+            reference = if (sweepSpeed == PayoutSpeed.STRIPE_INSTANT) "Automated Stripe Treasury Sweep" else "Automated Wero Treasury Sweep",
             notes = "Triggered by Automated Settlement Rules (Reserve float €%.2f retained)".format(rules.reserveFloat)
         )
     }

@@ -25,7 +25,7 @@ import kotlinx.coroutines.launch
         PayoutEntity::class,
         Order::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(StringListConverter::class)
@@ -369,7 +369,8 @@ abstract class AppDatabase : RoomDatabase() {
                 initiatedAt = now - (10 * dayMs),
                 estimatedArrivalAt = now - (10 * dayMs),
                 completedAt = now - (10 * dayMs),
-                notes = "Settled instantly via SEPA Instant Credit Transfer"
+                notes = "Settled instantly via SEPA Instant Credit Transfer",
+                providerRail = "SEPA"
             )
 
             val po2 = PayoutEntity(
@@ -389,7 +390,8 @@ abstract class AppDatabase : RoomDatabase() {
                 initiatedAt = now - (25 * dayMs),
                 estimatedArrivalAt = now - (24 * dayMs),
                 completedAt = now - (24 * dayMs),
-                notes = "Scheduled automated Friday payout batch"
+                notes = "Scheduled automated Friday payout batch",
+                providerRail = "SEPA"
             )
 
             val po3 = PayoutEntity(
@@ -409,7 +411,8 @@ abstract class AppDatabase : RoomDatabase() {
                 initiatedAt = now - (4 * dayMs),
                 estimatedArrivalAt = now - (4 * dayMs),
                 completedAt = now - (4 * dayMs),
-                notes = "Direct bank transfer to primary business settlement account"
+                notes = "Direct bank transfer to primary business settlement account",
+                providerRail = "SEPA"
             )
 
             payoutDao.insertPayouts(listOf(po1, po2, po3))

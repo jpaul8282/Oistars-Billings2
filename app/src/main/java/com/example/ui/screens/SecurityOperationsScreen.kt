@@ -395,8 +395,9 @@ private fun SecurityPostureHeroCard(
                     onClick = { onTriggerBreachProbe("PAYOUT_SPIKE") },
                     enabled = !isScanning,
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                    border = ButtonDefaults.outlinedButtonBorder.copy(
-                        brush = androidx.compose.ui.graphics.SolidColor(Color.White.copy(alpha = 0.35f))
+                    border = androidx.compose.foundation.BorderStroke(
+                        width = 1.dp,
+                        color = Color.White.copy(alpha = 0.35f)
                     ),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier

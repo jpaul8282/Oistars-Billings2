@@ -317,7 +317,11 @@ class FirestoreSyncManager(
                     "initiatedAt" to payout.initiatedAt,
                     "estimatedArrivalAt" to payout.estimatedArrivalAt,
                     "completedAt" to payout.completedAt,
-                    "notes" to payout.notes
+                    "notes" to payout.notes,
+                    "stripePayoutId" to payout.stripePayoutId,
+                    "stripeBalanceTxId" to payout.stripeBalanceTxId,
+                    "stripeArrivalDate" to payout.stripeArrivalDate,
+                    "providerRail" to payout.providerRail
                 )
                 batch.set(docRef, data, SetOptions.merge())
             }

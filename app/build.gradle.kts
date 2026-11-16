@@ -1,4 +1,8 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.awt.AWTEvent
+import java.awt.EventQueue
+import java.awt.Toolkit
+import javax.swing.SwingUtilities
 
 plugins {
   alias(libs.plugins.android.application)
@@ -138,4 +142,37 @@ dependencies {
 
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
+}
+
+// Guard against KSP2 (symbol-processing-aa-embeddable) BinaryFileTypeDecompilers posting
+// SwingUtilities.invokeLater callbacks onto AWT-EventQueue-0 that race with KSP's
+// Disposer clearing ApplicationManager.getApplication().
+tasks.withType<com.google.devtools.ksp.gradle.KspAATask>().configureEach {
+  doFirst {
+    System.setProperty("java.awt.headless", "true")
+    synchronized(System.getProperties()) {
+      if (System.getProperty("oistars.ksp.awtQueueGuarded") == null) {
+        System.setProperty("oistars.ksp.awtQueueGuarded", "true")
+        try {
+          val queue = Toolkit.getDefaultToolkit().systemEventQueue
+          queue.push(object : EventQueue() {
+            override fun dispatchEvent(event: AWTEvent) {
+              try {
+                super.dispatchEvent(event)
+              } catch (e: NullPointerException) {
+                val msg = e.message ?: ""
+                val fromKspDisposedApp =
+                  msg.contains("ApplicationManager.getApplication()") &&
+                    e.stackTrace.any { it.className.startsWith("ksp.com.intellij.") }
+                if (!fromKspDisposedApp) throw e
+              }
+            }
+          })
+          SwingUtilities.invokeAndWait {}
+        } catch (_: Throwable) {
+          // Ignore if toolkit/queue cannot be initialized in restricted environments
+        }
+      }
+    }
+  }
 }

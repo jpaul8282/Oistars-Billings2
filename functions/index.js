@@ -4,6 +4,7 @@ const express = require("express");
 const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 // --- Firebase Admin SDK Initialization ---
 const serviceAccountPath = process.env.SERVICE_ACCOUNT_KEY_PATH || path.join(__dirname, "serviceAccountKey.json");
@@ -140,7 +141,11 @@ exports.onOrderUpdated = functions.firestore
 
 const app = express();
 app.use(cors({ origin: true }));
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
@@ -302,8 +307,384 @@ const {
 } = require("./genkit-flow");
 
 // =========================================================================
-// 4. LIVE PAYOUT SETTLEMENT & AUTOMATED RULES API
+// 4. LIVE STRIPE & WERO PAYOUT SETTLEMENT & AUTOMATED RULES API
 // =========================================================================
+
+const STRIPE_API_BASE = "https://api.stripe.com/v1";
+
+function isValidStripeKey(key) {
+  return Boolean(key && (key.startsWith("sk_") || key.startsWith("rk_")) && !key.includes("PLACEHOLDER"));
+}
+
+function getStripeKey(req) {
+  const envKey = process.env.STRIPE_SECRET_KEY || "";
+  if (isValidStripeKey(envKey)) return envKey.trim();
+  const headerKey = (req && (req.headers["x-stripe-key"] || req.headers["authorization"]?.replace(/^Bearer\s+/i, ""))) || "";
+  if (isValidStripeKey(headerKey)) return headerKey.trim();
+  return "";
+}
+
+function mapStripeStatusToApp(stripeStatus) {
+  switch ((stripeStatus || "").toLowerCase()) {
+    case "paid":
+      return "COMPLETED";
+    case "pending":
+    case "in_transit":
+      return "PROCESSING";
+    case "canceled":
+    case "cancelled":
+      return "CANCELLED";
+    case "failed":
+      return "FAILED";
+    default:
+      return "PROCESSING";
+  }
+}
+
+function verifyStripeSignature(rawBody, sigHeader, webhookSecret) {
+  if (!webhookSecret || !sigHeader || !rawBody) return !webhookSecret;
+  const parts = sigHeader.split(",").reduce((acc, item) => {
+    const [k, v] = item.split("=");
+    if (k && v) acc[k.trim()] = v.trim();
+    return acc;
+  }, {});
+  if (!parts.t || !parts.v1) return false;
+  const payload = `${parts.t}.${rawBody.toString("utf8")}`;
+  const expected = crypto.createHmac("sha256", webhookSecret).update(payload).digest("hex");
+  try {
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(parts.v1));
+  } catch (_) {
+    return false;
+  }
+}
+
+async function stripeRequest(method, endpoint, params = null, stripeKey = "", connectAccountId = "") {
+  const headers = {
+    Authorization: `Bearer ${stripeKey}`
+  };
+  const effectiveConnectId = (connectAccountId || process.env.STRIPE_CONNECT_ACCOUNT_ID || "").trim();
+  if (effectiveConnectId) {
+    headers["Stripe-Account"] = effectiveConnectId;
+  }
+
+  const options = { method, headers };
+  if (params && (method === "POST" || method === "PUT")) {
+    headers["Content-Type"] = "application/x-www-form-urlencoded";
+    const form = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && String(v).length > 0) {
+        form.append(k, String(v));
+      }
+    });
+    options.body = form.toString();
+  }
+
+  const response = await fetch(`${STRIPE_API_BASE}${endpoint}`, options);
+  const data = await response.json();
+  if (!response.ok) {
+    const errMsg = (data && data.error && data.error.message) || `Stripe HTTP ${response.status}`;
+    const err = new Error(errMsg);
+    err.statusCode = response.status;
+    err.stripeCode = data?.error?.code || "stripe_error";
+    throw err;
+  }
+  return data;
+}
+
+function stripePayoutToAppRecord(sp, userId = "jurgen-westerveld", fallbackBank = "ING Bank N.V.", fallbackIban = "NL43 INGB 0006 3721 46", fallbackBic = "INGBNL2A") {
+  const now = Date.now();
+  const createdMs = sp.created ? sp.created * 1000 : now;
+  const arrivalMs = sp.arrival_date ? sp.arrival_date * 1000 : createdMs;
+  const appStatus = mapStripeStatusToApp(sp.status);
+  const method = (sp.method || "standard").toLowerCase();
+  const speed = method === "instant" ? "STRIPE_INSTANT" : "STRIPE_STANDARD";
+  const amountEur = Math.round(Number(sp.amount || 0)) / 100;
+
+  return {
+    id: sp.id,
+    ownerId: userId,
+    ownerName: (sp.metadata && sp.metadata.ownerName) || "Jurgen Paul Westerveld",
+    amount: amountEur,
+    currency: (sp.currency || "eur").toUpperCase(),
+    fee: 0.0,
+    netAmount: amountEur,
+    status: appStatus,
+    destinationBank: (sp.metadata && sp.metadata.destinationBank) || fallbackBank,
+    destinationIban: (sp.metadata && sp.metadata.destinationIban) || fallbackIban,
+    destinationBic: (sp.metadata && sp.metadata.destinationBic) || fallbackBic,
+    payoutSpeed: speed,
+    reference: sp.description || sp.statement_descriptor || "Stripe Live Payout",
+    initiatedAt: createdMs,
+    estimatedArrivalAt: arrivalMs,
+    completedAt: appStatus === "COMPLETED" ? arrivalMs : null,
+    notes: `Stripe Payout (${sp.id}) • Status: ${sp.status} • Method: ${method}`,
+    stripePayoutId: sp.id,
+    stripeBalanceTxId: typeof sp.balance_transaction === "string" ? sp.balance_transaction : (sp.balance_transaction?.id || null),
+    stripeArrivalDate: arrivalMs,
+    providerRail: "STRIPE"
+  };
+}
+
+// Live Stripe Balance & Connected Account Status
+app.get("/api/stripe/balance", async (req, res) => {
+  try {
+    const stripeKey = getStripeKey(req);
+    const connectAccountId = req.query.connectAccountId || process.env.STRIPE_CONNECT_ACCOUNT_ID || "";
+    if (!stripeKey) {
+      return res.json({
+        configured: false,
+        mode: "unconfigured",
+        availableEur: 0.0,
+        pendingEur: 0.0,
+        accountId: connectAccountId || null,
+        payoutsEnabled: false,
+        message: "STRIPE_SECRET_KEY is not configured on backend",
+        timestamp: Date.now()
+      });
+    }
+
+    const [balance, account] = await Promise.all([
+      stripeRequest("GET", "/balance", null, stripeKey, connectAccountId),
+      stripeRequest("GET", connectAccountId ? `/accounts/${connectAccountId}` : "/account", null, stripeKey, "")
+        .catch(() => null)
+    ]);
+
+    const findEur = (arr) => {
+      if (!Array.isArray(arr)) return 0.0;
+      const eur = arr.find(x => (x.currency || "").toLowerCase() === "eur") || arr[0];
+      return eur ? Math.round(Number(eur.amount || 0)) / 100 : 0.0;
+    };
+
+    const extAccounts = account?.external_accounts?.data || [];
+    const primaryBank = extAccounts[0] || null;
+    const isLive = stripeKey.startsWith("sk_live_") || stripeKey.startsWith("rk_live_");
+
+    return res.json({
+      configured: true,
+      mode: isLive ? "live" : "test",
+      availableEur: findEur(balance.available),
+      pendingEur: findEur(balance.pending),
+      accountId: account?.id || connectAccountId || null,
+      accountEmail: account?.email || null,
+      payoutsEnabled: Boolean(account?.payouts_enabled ?? true),
+      bankName: primaryBank?.bank_name || "ING Bank N.V.",
+      ibanLast4: primaryBank?.last4 || "2146",
+      scheduleInterval: account?.settings?.payouts?.schedule?.interval || "manual",
+      timestamp: Date.now()
+    });
+  } catch (error) {
+    console.error("[Stripe Balance Error]", error);
+    return res.status(error.statusCode || 500).json({
+      configured: true,
+      error: error.message,
+      code: error.stripeCode || "stripe_balance_error"
+    });
+  }
+});
+
+// List Live Stripe Payouts and Sync into Firestore
+app.get("/api/stripe/payouts", async (req, res) => {
+  try {
+    const userId = req.query.userId || "jurgen-westerveld";
+    const stripeKey = getStripeKey(req);
+    const connectAccountId = req.query.connectAccountId || process.env.STRIPE_CONNECT_ACCOUNT_ID || "";
+    if (!stripeKey) {
+      return res.json({
+        configured: false,
+        payouts: [],
+        message: "STRIPE_SECRET_KEY is not configured"
+      });
+    }
+
+    const listRes = await stripeRequest("GET", "/payouts?limit=20", null, stripeKey, connectAccountId);
+    const payouts = Array.isArray(listRes.data)
+      ? listRes.data.map(sp => stripePayoutToAppRecord(sp, userId))
+      : [];
+
+    if (payouts.length > 0) {
+      const batch = db.batch();
+      for (const po of payouts) {
+        const ref = db.collection("users").doc(userId).collection("payouts").doc(po.id);
+        batch.set(ref, po, { merge: true });
+      }
+      await batch.commit();
+    }
+
+    return res.json({
+      configured: true,
+      count: payouts.length,
+      payouts,
+      timestamp: Date.now()
+    });
+  } catch (error) {
+    console.error("[Stripe List Payouts Error]", error);
+    return res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+// Create a Live Stripe Payout
+app.post("/api/stripe/payouts", async (req, res) => {
+  try {
+    const {
+      userId = "jurgen-westerveld",
+      ownerName = "Jurgen Paul Westerveld",
+      amount,
+      currency = "eur",
+      method = "instant",
+      destinationBank = "ING Bank N.V.",
+      destinationIban = "NL43 INGB 0006 3721 46",
+      destinationBic = "INGBNL2A",
+      reference = "Owner Draw - Oistars International",
+      connectAccountId = ""
+    } = req.body || {};
+
+    const stripeKey = getStripeKey(req);
+    if (!stripeKey) {
+      return res.status(400).json({
+        error: "STRIPE_SECRET_KEY is not configured. Add your Stripe secret key in AI Studio Secrets."
+      });
+    }
+
+    const numericAmount = Number(amount);
+    const amountCents = Math.round(numericAmount * 100);
+    if (!numericAmount || amountCents <= 0) {
+      return res.status(400).json({ error: "Valid positive payout amount is required." });
+    }
+
+    const stripeMethod = method === "instant" || method === "STRIPE_INSTANT" ? "instant" : "standard";
+    const stripePayout = await stripeRequest(
+      "POST",
+      "/payouts",
+      {
+        amount: amountCents,
+        currency: (currency || "eur").toLowerCase(),
+        method: stripeMethod,
+        description: reference,
+        statement_descriptor: "OISTARS PAYOUT",
+        "metadata[userId]": userId,
+        "metadata[ownerName]": ownerName,
+        "metadata[destinationBank]": destinationBank,
+        "metadata[destinationIban]": destinationIban,
+        "metadata[destinationBic]": destinationBic
+      },
+      stripeKey,
+      connectAccountId
+    );
+
+    const payoutRecord = stripePayoutToAppRecord(
+      stripePayout,
+      userId,
+      destinationBank,
+      destinationIban,
+      destinationBic
+    );
+    await db.collection("users").doc(userId).collection("payouts").doc(payoutRecord.id).set(payoutRecord, { merge: true });
+
+    const webhookRecord = {
+      provider: "STRIPE_PAYOUT_API",
+      transactionRef: stripePayout.id,
+      amount: payoutRecord.amount,
+      currency: payoutRecord.currency,
+      iban: destinationIban,
+      status: payoutRecord.status === "COMPLETED" ? "SETTLED" : "DISPATCHED",
+      receivedAt: Date.now()
+    };
+
+    await Promise.all([
+      db.collection("settlement_webhooks").add(webhookRecord),
+      db.collection("users").doc(userId).collection("settlement_webhooks").doc(`WHK-${stripePayout.id}`).set(webhookRecord, { merge: true })
+    ]);
+
+    return res.status(201).json({
+      success: true,
+      payout: payoutRecord,
+      stripePayout,
+      webhook: webhookRecord
+    });
+  } catch (error) {
+    console.error("[Stripe Create Payout Error]", error);
+    return res.status(error.statusCode || 500).json({
+      error: error.message,
+      code: error.stripeCode || "stripe_payout_error"
+    });
+  }
+});
+
+// Cancel a Pending/In-Transit Stripe Payout
+app.post("/api/stripe/payouts/:id/cancel", async (req, res) => {
+  try {
+    const payoutId = req.params.id;
+    const { userId = "jurgen-westerveld", connectAccountId = "" } = req.body || {};
+    const stripeKey = getStripeKey(req);
+    if (!stripeKey) {
+      return res.status(400).json({ error: "STRIPE_SECRET_KEY is not configured." });
+    }
+
+    const cancelled = await stripeRequest("POST", `/payouts/${payoutId}/cancel`, {}, stripeKey, connectAccountId);
+    const updatedRecord = stripePayoutToAppRecord(cancelled, userId);
+
+    await db.collection("users").doc(userId).collection("payouts").doc(payoutId).set({
+      status: "CANCELLED",
+      notes: `Cancelled via Stripe API (${cancelled.status})`
+    }, { merge: true });
+
+    const webhookRecord = {
+      provider: "STRIPE_PAYOUT_API",
+      transactionRef: payoutId,
+      amount: updatedRecord.amount,
+      currency: updatedRecord.currency,
+      iban: updatedRecord.destinationIban,
+      status: "CANCELLED",
+      receivedAt: Date.now()
+    };
+    await db.collection("users").doc(userId).collection("settlement_webhooks").doc(`WHK-CANCEL-${payoutId}`).set(webhookRecord, { merge: true });
+
+    return res.json({ success: true, payout: updatedRecord });
+  } catch (error) {
+    console.error("[Stripe Cancel Payout Error]", error);
+    return res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+// Stripe Live Webhook Receiver (payout.created, payout.paid, payout.failed, payout.canceled)
+app.post("/api/webhooks/stripe", async (req, res) => {
+  try {
+    const sig = req.headers["stripe-signature"];
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
+    if (webhookSecret && !verifyStripeSignature(req.rawBody, sig, webhookSecret)) {
+      return res.status(400).json({ error: "Invalid Stripe webhook signature" });
+    }
+
+    const event = req.body || {};
+    const eventType = event.type || "payout.updated";
+    const obj = (event.data && event.data.object) || {};
+    const userId = (obj.metadata && obj.metadata.userId) || req.query.userId || "jurgen-westerveld";
+
+    if (eventType.startsWith("payout.") && obj.id) {
+      const record = stripePayoutToAppRecord(obj, userId);
+      await db.collection("users").doc(userId).collection("payouts").doc(obj.id).set(record, { merge: true });
+
+      const webhookLog = {
+        provider: "STRIPE_WEBHOOK",
+        transactionRef: obj.id,
+        amount: record.amount,
+        currency: record.currency,
+        iban: record.destinationIban,
+        status: eventType === "payout.paid" ? "SETTLED" : eventType === "payout.failed" ? "FAILED" : eventType === "payout.canceled" ? "CANCELLED" : "DISPATCHED",
+        receivedAt: Date.now()
+      };
+      await Promise.all([
+        db.collection("settlement_webhooks").add(webhookLog),
+        db.collection("users").doc(userId).collection("settlement_webhooks").doc(`WHK-${event.id || obj.id}`).set(webhookLog, { merge: true })
+      ]);
+    }
+
+    return res.json({ received: true, type: eventType });
+  } catch (error) {
+    console.error("[Stripe Webhook Error]", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
 
 app.post("/api/payouts/initiate", async (req, res) => {
   try {
@@ -315,10 +696,63 @@ app.post("/api/payouts/initiate", async (req, res) => {
       destinationBank = "ING Bank N.V.",
       destinationIban = "NL43 INGB 0006 3721 46",
       destinationBic = "INGBNL2A",
-      speed = "WERO_INSTANT",
+      speed = "STRIPE_INSTANT",
+      rail = "",
       reference = "Owner Draw / Live Settlement",
       notes = ""
     } = req.body || {};
+
+    if (rail === "STRIPE" || String(speed).startsWith("STRIPE_")) {
+      req.body.method = speed === "STRIPE_STANDARD" ? "standard" : "instant";
+      const stripeKey = getStripeKey(req);
+      if (!stripeKey) {
+        return res.status(400).json({ error: "STRIPE_SECRET_KEY is not configured for Stripe payouts." });
+      }
+      const numericAmount = Number(amount);
+      const amountCents = Math.round(numericAmount * 100);
+      if (!numericAmount || amountCents <= 0) {
+        return res.status(400).json({ error: "Valid positive payout amount is required." });
+      }
+      const stripePayout = await stripeRequest(
+        "POST",
+        "/payouts",
+        {
+          amount: amountCents,
+          currency: (currency || "eur").toLowerCase(),
+          method: speed === "STRIPE_STANDARD" ? "standard" : "instant",
+          description: reference,
+          statement_descriptor: "OISTARS PAYOUT",
+          "metadata[userId]": userId,
+          "metadata[ownerName]": ownerName,
+          "metadata[destinationBank]": destinationBank,
+          "metadata[destinationIban]": destinationIban,
+          "metadata[destinationBic]": destinationBic
+        },
+        stripeKey,
+        req.body.connectAccountId || ""
+      );
+      const payoutRecord = stripePayoutToAppRecord(stripePayout, userId, destinationBank, destinationIban, destinationBic);
+      await db.collection("users").doc(userId).collection("payouts").doc(payoutRecord.id).set(payoutRecord, { merge: true });
+      const webhookRecord = {
+        provider: "STRIPE_PAYOUT_API",
+        transactionRef: stripePayout.id,
+        amount: payoutRecord.amount,
+        currency: payoutRecord.currency,
+        iban: destinationIban,
+        status: payoutRecord.status === "COMPLETED" ? "SETTLED" : "DISPATCHED",
+        receivedAt: Date.now()
+      };
+      await Promise.all([
+        db.collection("settlement_webhooks").add(webhookRecord),
+        db.collection("users").doc(userId).collection("settlement_webhooks").doc(`WHK-${stripePayout.id}`).set(webhookRecord, { merge: true })
+      ]);
+      return res.status(201).json({
+        success: true,
+        payout: payoutRecord,
+        webhook: webhookRecord,
+        message: `Live Stripe payout ${stripePayout.id} (${payoutRecord.status}) processed`
+      });
+    }
 
     const numericAmount = Number(amount);
     if (!numericAmount || numericAmount <= 0) {
@@ -353,7 +787,8 @@ app.post("/api/payouts/initiate", async (req, res) => {
       estimatedArrivalAt: arrival,
       completedAt: isImmediate ? now : null,
       notes: notes || `Live ${speed} settlement via Oistars Gateway`,
-      gatewayTxRef: `GW-${now}`
+      gatewayTxRef: `GW-${now}`,
+      providerRail: speed === "WERO_INSTANT" ? "WERO" : "SEPA"
     };
 
     await db.collection("users").doc(userId).collection("payouts").doc(payoutId).set(payoutRecord, { merge: true });
@@ -381,7 +816,7 @@ app.post("/api/payouts/initiate", async (req, res) => {
     });
   } catch (error) {
     console.error("Error initiating live payout:", error);
-    return res.status(500).json({ error: error.message });
+    return res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
